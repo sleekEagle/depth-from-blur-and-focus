@@ -168,14 +168,14 @@ class RandomFilp(object):
 
 def FoD500Loader(data_dir, scale=1, focus_dist=[0.1, 0.15, 0.3, 0.7, 1.0, 1.5, 2.0, 3.0, 10.0, float('inf')],focus_dist_req=[0.1,.15,.3,0.7,1.5]):
 
-    img_train_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "All.tif" and int(f[:6]) < 400]
-    dpth_train_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "Dpt.exr" and int(f[:6]) < 400]
+    img_train_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "All.tif" and int(f[:6]) < 200]
+    dpth_train_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "Dpt.exr" and int(f[:6]) < 200]
 
     img_train_list.sort()
     dpth_train_list.sort()
 
-    img_val_list =  [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "All.tif" and int(f[:6]) >= 400]
-    dpth_val_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "Dpt.exr" and int(f[:6]) >=400]
+    img_val_list =  [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "All.tif" and int(f[:6]) >= 200]
+    dpth_val_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "Dpt.exr" and int(f[:6]) >=200]
 
     img_val_list.sort()
     dpth_val_list.sort()
