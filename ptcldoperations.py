@@ -11,8 +11,7 @@ rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(color_raw, depth
 print(rgbd_image)
 pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
     rgbd_image,
-    o3d.camera.PinholeCameraIntrinsic(
-        o3d.camera.PinholeCameraIntrinsicParameters.PrimeSenseDefault))
+    o3d.camera.PinholeCameraIntrinsic(o3d.io.read_pinhole_camera_intrinsic("C:\\Users\\lahir\\anaconda3\\envs\\defocus\\Lib\\site-packages\\open3d\\frames\\intrinsic.json")))
 
 pcd.transform([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]])
 o3d.visualization.draw_geometries([pcd])
@@ -24,7 +23,7 @@ o3d.visualization.draw_geometries([pcd], point_show_normal=True)
 with o3d.utility.VerbosityContextManager(
         o3d.utility.VerbosityLevel.Debug) as cm:
     mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
-        pcd, depth=9)
+        pcd, depth=12)
 
 o3d.visualization.draw_geometries([mesh],
                                   zoom=0.664,
