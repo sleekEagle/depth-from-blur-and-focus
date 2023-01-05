@@ -72,6 +72,7 @@ class ImageDataset(torch.utils.data.Dataset):
         ##### Read and process an image
         idx_dpt = int(idx)
         img_dpt = read_dpt(self.root_dir + self.imglist_dpt[idx_dpt])
+        print(np.max(img_dpt))
 
         foc_dist = self.focus_dist.copy()
         mat_dpt = img_dpt.copy()[:, :, np.newaxis]

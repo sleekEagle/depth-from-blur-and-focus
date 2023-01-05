@@ -20,13 +20,16 @@ Main code for Ours-FV and Ours-DFV test on FoD500 dataset
 
 parser = argparse.ArgumentParser(description='DFVDFF')
 parser.add_argument('--data_path', default='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\focal_data\\',help='test data path')
+#parser.add_argument('--data_path', default='C:\\Users\\lahir\\focusdata\\fs_6\\fs_6\\',help='test data path')
 parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\models\\best.tar', help='model path')
-parser.add_argument('--outdir', default='./FoD500/',help='output dir')
+parser.add_argument('--outdir', default='C:\\Users\\lahir\\results\\',help='output dir')
 
 parser.add_argument('--stack_num', type=int ,default=5, help='num of image in a stack, please take a number in [2, 10], change it according to the loaded checkpoint!')
 parser.add_argument('--use_diff', default=1, choices=[0,1], help='if use differential images as input, change it according to the loaded checkpoint!')
 
 parser.add_argument('--level', type=int, default=4, help='num of layers in network, please take a number in [1, 4]')
+parser.add_argument('--focusdist', nargs='+', default=[0.1, 0.15, 0.3, 0.7, 1.0, 1.5, 2.0, 3.0, 10.0, float('inf')],  help='focal distances included in the dataset')
+parser.add_argument('--focusdistreq', nargs='+', default=[0.1,.15,.3,0.7,1.5],  help='focal dists required for the model')
 args = parser.parse_args()
 
 # !!! Only for users who download our pre-trained checkpoint, comment the next four line if you are not !!!
@@ -64,8 +67,8 @@ def disp2depth(disp):
 def main(image_size = (256, 256)):
     model.eval()
 
-    focus_dist=[0.1, 0.15, 0.3, 0.7, 1.0, 1.5, 2.0, 3.0, 10.0, float('inf')]
-    focus_dist_req=[0.1, 0.15, 0.3, 0.7,1.0]
+    focus_dist=args.focusdist
+    focus_dist_req=args.focusdistreq
     dataset_train, dataset_validation = FoD500Loader(args.data_path, scale=1,focus_dist=focus_dist,focus_dist_req=focus_dist_req)
     dataloader = torch.utils.data.DataLoader(dataset=dataset_validation, num_workers=1, batch_size=1, shuffle=False)
 
