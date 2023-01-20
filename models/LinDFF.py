@@ -79,17 +79,34 @@ class DFFNet(nn.Module):
             _, cost3 = self.decoder3(feat3)
 
         else:
-            print('const6')
             feat6_2x, cost6 = self.decoder6(vol4)
+            
+            #divide cost (estimated blur) with blur when focused at infinity (i.e. last image of the focal stack) 
+            cost6+=1e-5
+            infblur6=torch.unsqueeze(cost6[:,-1,:,:],dim=1)
+            infblur6=torch.repeat_interleave(infblur6,cost6.shape[1],dim=1)
+            cost6=cost6/infblur6
+
             feat5 = torch.cat((feat6_2x, vol3), dim=1)
-            print('const5')
             feat5_2x, cost5 = self.decoder5(feat5)
-            feat4 = torch.cat((feat5_2x, vol2), dim=1)
-            print('const4')
+            cost5+=1e-5
+            infblur5=torch.unsqueeze(cost5[:,-1,:,:],dim=1)
+            infblur5=torch.repeat_interleave(infblur5,cost5.shape[1],dim=1)
+            cost5=cost5/infblur5
+
+            feat4 = torch.cat((feat5_2x, vol2), dim=1)            
             feat4_2x, cost4 = self.decoder4(feat4)
+            cost4+=1e-5
+            infblur4=torch.unsqueeze(cost4[:,-1,:,:],dim=1)
+            infblur4=torch.repeat_interleave(infblur4,cost4.shape[1],dim=1)
+            cost4=cost4/infblur4
+
             feat3 = torch.cat((feat4_2x, vol1), dim=1)
-            print('const3')
             _, cost3 = self.decoder3(feat3)
+            cost3+=1e-5
+            infblur3=torch.unsqueeze(cost3[:,-1,:,:],dim=1)
+            infblur3=torch.repeat_interleave(infblur3,cost3.shape[1],dim=1)
+            cost3=cost3/infblur3
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
 
@@ -141,6 +158,14 @@ out=model(img_stack,foc_dist)
 
 cost=torch.rand(2,5,256,256) 
 cost[:,0,:,:]=cost[:,0,:,:]/cost[:,-1,:,:]
+infblur=torch.unsqueeze(cost[:,-1,:,:],dim=1)
+infblur=torch.repeat_interleave(infblur,cost.shape[1],dim=1)
+a=cost/infblur
+
+
+
+
+
 
 
 

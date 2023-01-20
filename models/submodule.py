@@ -134,23 +134,16 @@ class decoderBlock(nn.Module):
 
 
         if self.training:
-            print('training')
             # classification
             costl = self.classify(fvl)
             if self.up:
-                print('training up')
                 fvl = self.up(fvl)
-            else:
-                print('training not up')
         else:
-            print('not training')
             # classification
             if self.up:
-                print('not training up')
                 fvl = self.up(fvl)
                 costl=fvl
             else:
-                print('not training not up')
                 costl = self.classify(fvl)
 
         return fvl,costl.squeeze(1)
