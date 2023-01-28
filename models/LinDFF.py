@@ -36,7 +36,7 @@ class DFFNet(nn.Module):
             self.decoder6 = decoderBlock(2, 128, 128, up=True, pool=True)
 
         # reg
-        self.disp_reg = disparityregression(1)
+        self.distreg=distregression()
 
 
     def diff_feat_volume1(self, vol):
@@ -83,9 +83,11 @@ class DFFNet(nn.Module):
             
             #divide cost (estimated blur) with blur when focused at infinity (i.e. last image of the focal stack) 
             cost6+=1e-5
+            print('cost6:'+str(cost6.shape))
             infblur6=torch.unsqueeze(cost6[:,-1,:,:],dim=1)
             infblur6=torch.repeat_interleave(infblur6,cost6.shape[1],dim=1)
             cost6=cost6/infblur6
+            print('post division cost6:'+str(cost6.shape))
 
             feat5 = torch.cat((feat6_2x, vol3), dim=1)
             feat5_2x, cost5 = self.decoder5(feat5)
@@ -109,20 +111,12 @@ class DFFNet(nn.Module):
             cost3=cost3/infblur3
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
-
-        print('cost3 : '+ str(cost3.shape))
-        print('min : '+str(torch.min(cost3)) +' max : '+str(torch.max(cost3)))
-
-        print('cost4 : '+ str(cost4.shape))
-        print('min : '+str(torch.min(cost4)) +' max : '+str(torch.max(cost4)))
-
-        print('cost5 : '+ str(cost5.shape))
-        print('min : '+str(torch.min(cost5)) +' max : '+str(torch.max(cost5)))
-
-        print('cost6 : '+ str(cost6.shape))
-        print('min : '+str(torch.min(cost6)) +' max : '+str(torch.max(cost6)))
-
-        pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
+        #pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
+        #create s1
+        s1=torch.unsqueeze(focal_dist,dim=2).unsqueeze(dim=3)
+        s1=torch.repeat_interleave(s1,cost3.shape[-1],dim=2).repeat_interleave(cost3.shape[-1],dim=3)
+        pred3=self.distreg(s1,cost3)
+        std3=0
 
         # different output based on level
         stacked = [pred3]
@@ -130,17 +124,23 @@ class DFFNet(nn.Module):
         if self.training :
             if self.level >= 2:
                 cost4 = F.interpolate(cost4, [h, w], mode='bilinear')
-                pred4, std4 = self.disp_reg(F.softmax(cost4, 1), focal_dist, uncertainty=True)
+                #pred4, std4 = self.disp_reg(F.softmax(cost4, 1), focal_dist, uncertainty=True)
+                pred4=self.distreg(s1,cost4)
+                std4=0
                 stacked.append(pred4)
                 stds.append(std4)
                 if self.level >=3 :
                     cost5 = F.interpolate((cost5).unsqueeze(1), [focal_dist.shape[1], h, w], mode='trilinear').squeeze(1)
-                    pred5, std5 = self.disp_reg(F.softmax(cost5, 1), focal_dist, uncertainty=True)
+                    pred5=self.distreg(s1,cost5)
+                    std5=0
+                    #pred5, std5 = self.disp_reg(F.softmax(cost5, 1), focal_dist, uncertainty=True)
                     stacked.append(pred5)
                     stds.append(std5)
                     if self.level >=4 :
                         cost6 = F.interpolate((cost6).unsqueeze(1), [focal_dist.shape[1], h, w], mode='trilinear').squeeze(1)
-                        pred6, std6 = self.disp_reg(F.softmax(cost6, 1), focal_dist, uncertainty=True)
+                        #pred6, std6 = self.disp_reg(F.softmax(cost6, 1), focal_dist, uncertainty=True)
+                        pred6=self.distreg(s1,cost6)
+                        std6=0
                         stacked.append(pred6)
                         stds.append(std6)
             return stacked, stds, None
@@ -149,18 +149,24 @@ class DFFNet(nn.Module):
 
 model = DFFNet(clean=False,level=4, use_diff=1)
 model = nn.DataParallel(model)
-model.cuda()
+model.train()
+#model.cuda()
 
 img_stack=torch.rand(2,5,3,256,256)
 foc_dist=torch.rand(2,5)
 
+s1=torch.unsqueeze(foc_dist,dim=2).unsqueeze(dim=3)
+s1=torch.repeat_interleave(s1,cost3.shape[-1],dim=2).repeat_interleave(cost3.shape[-1],dim=3)
+
 out=model(img_stack,foc_dist)
 
+'''
 cost=torch.rand(2,5,256,256) 
 cost[:,0,:,:]=cost[:,0,:,:]/cost[:,-1,:,:]
 infblur=torch.unsqueeze(cost[:,-1,:,:],dim=1)
 infblur=torch.repeat_interleave(infblur,cost.shape[1],dim=1)
 a=cost/infblur
+'''
 
 
 
