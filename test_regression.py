@@ -100,37 +100,43 @@ def get_sim_blur_3d(s1_start=0,s1_end=2,n=5,bs=4,imgsize=24,noise_std=0.1):
 bs=4
 n=5
 imgsize=24
-s1,L,s2=get_sim_blur_3d(bs=bs,n=n,imgsize=imgsize,noise_std=0.001)
+s1,L,s2=get_sim_blur_3d(bs=bs,n=n,imgsize=imgsize,noise_std=0.1)
 
 
-#for +45 degrees lines
-s1est1=s1-L
-s1est1=s1est1.unsqueeze(dim=1)
-s1est1=torch.repeat_interleave(s1est1,s1.shape[1]+1,dim=1)
+def regresss2(s1,blur):
+    #for +45 degrees lines
+    s1est1=s1-blur
+    s1est1=s1est1.unsqueeze(dim=1)
+    s1est1=torch.repeat_interleave(s1est1,s1.shape[1]+1,dim=1)
 
-#for -45 degrees lines
-s1est2=s1+L
-s1est2=s1est2.unsqueeze(dim=1)
-s1est2=torch.repeat_interleave(s1est2,s1.shape[1]+1,dim=1)
+    #for -45 degrees lines
+    s1est2=s1+blur
+    s1est2=s1est2.unsqueeze(dim=1)
+    s1est2=torch.repeat_interleave(s1est2,s1.shape[1]+1,dim=1)
 
-mask=torch.zeros(2,bs,n+1,n,imgsize,imgsize)
-for i in range(1,n+1):
-    mask[0,:,i,:i,:,:]=1
-for i in range(0,n+1):
-    mask[1,:,i,i:,:]=1
-s1est=s1est1*mask[1]+s1est2*mask[0]
+    mask=torch.zeros(2,bs,n+1,n,imgsize,imgsize)
+    for i in range(1,n+1):
+        mask[0,:,i,:i,:,:]=1
+    for i in range(0,n+1):
+        mask[1,:,i,i:,:]=1
+    s1est=s1est1*mask[1]+s1est2*mask[0]
 
-s1eststd=torch.std(s1est,dim=2)
-s1eststd[0,:,20,0]
+    s1eststd=torch.std(s1est,dim=2)
+    s1eststd[0,:,20,0]
 
-argmin=torch.argmin(s1eststd,dim=1)
+    argmin=torch.argmin(s1eststd,dim=1)
 
-argmin=torch.unsqueeze(argmin,dim=1).unsqueeze(dim=2)
-argmin=torch.repeat_interleave(argmin,repeats=n,dim=2)
+    argmin=torch.unsqueeze(argmin,dim=1).unsqueeze(dim=2)
+    argmin=torch.repeat_interleave(argmin,repeats=n,dim=2)
 
-sel=torch.gather(s1est,dim=1,index=argmin)
-s2_pred=torch.mean(sel,dim=2)[:,0,:,:]
-torch.mean(s2_pred[:,:,:]-s2[:,0,:,:])
+    sel=torch.gather(s1est,dim=1,index=argmin)
+    s2_pred=torch.mean(sel,dim=2)[:,0,:,:]
+    return s2_pred
+
+
+s2pred=regresss2(s1,L)
+
+torch.mean(torch.abs(s2pred-s2[:,0,:,:]))
 
 
 
