@@ -78,6 +78,40 @@ class disparityregression(nn.Module):
         else:
             return out
 
+class distregression(nn.Module):
+    def __init__(self):
+        super(distregression, self).__init__()
+
+    def forward(self, s1,blur):
+        #for +45 degrees lines
+        s1est1=s1-blur
+        s1est1=s1est1.unsqueeze(dim=1)
+        s1est1=torch.repeat_interleave(s1est1,s1.shape[1]+1,dim=1)
+        imgsize=s1.shape[-1]
+        bs=s1.shape[0]
+        n=s1.shape[1]
+
+        #for -45 degrees lines
+        s1est2=s1+blur
+        s1est2=s1est2.unsqueeze(dim=1)
+        s1est2=torch.repeat_interleave(s1est2,s1.shape[1]+1,dim=1)
+
+        mask=torch.zeros(2,bs,n+1,n,imgsize,imgsize)
+        for i in range(1,n+1):
+            mask[0,:,i,:i,:,:]=1
+        for i in range(0,n+1):
+            mask[1,:,i,i:,:]=1
+        s1est=s1est1*mask[1]+s1est2*mask[0]
+
+        s1eststd=torch.std(s1est,dim=2)
+        argmin=torch.argmin(s1eststd,dim=1)
+
+        argmin=torch.unsqueeze(argmin,dim=1).unsqueeze(dim=2)
+        argmin=torch.repeat_interleave(argmin,repeats=n,dim=2)
+
+        sel=torch.gather(s1est,dim=1,index=argmin)
+        s2_pred=torch.mean(sel,dim=2)[:,0,:,:]
+        return s2_pred
 
 class decoderBlock(nn.Module):
     def __init__(self, nconvs, inchannelF,channelF,stride=(1,1,1),up=False, nstride=1,pool=False):

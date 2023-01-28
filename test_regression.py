@@ -83,25 +83,24 @@ print(s2est)
 
 
 #extend this to a 3d array of blurs (a batch of 2d images)
-def get_sim_blur_3d(s1_start=0,s1_end=2,n=5,bs=4,imgsize=24,noise_std=0.1):
+def get_sim_blur_3d(s1_start=0,s1_end=2,n=5,bs=4,imgsize=24,noise_std=0.1,s2mean=3):
     s1=np.linspace(s1_start,s1_end,n)
     s1=torch.tensor(s1)
     s1=torch.unsqueeze(s1,dim=0).unsqueeze(dim=2).unsqueeze(dim=3)
     s1=torch.repeat_interleave(s1,bs,0).repeat_interleave(imgsize,2).repeat_interleave(imgsize,3)
 
-    s2 = torch.tensor(np.random.rand(bs,imgsize,imgsize))*3
+    s2 = torch.tensor(np.random.rand(bs,imgsize,imgsize))*s2mean
     s2=torch.unsqueeze(s2,dim=1).repeat_interleave(n,1)
 
     L=torch.abs(s2-s1)
     L=L+(noise_std**0.5)*torch.randn(bs,n,imgsize,imgsize)
-
     return s1,L,s2
 
 bs=4
 n=5
 imgsize=24
-s1,L,s2=get_sim_blur_3d(bs=bs,n=n,imgsize=imgsize,noise_std=0.1)
-
+s2mean=200
+s1,L,s2=get_sim_blur_3d(bs=bs,n=n,imgsize=imgsize,noise_std=0.00001,s2mean=s2mean)
 
 def regresss2(s1,blur):
     #for +45 degrees lines
@@ -137,6 +136,56 @@ def regresss2(s1,blur):
 s2pred=regresss2(s1,L)
 
 torch.mean(torch.abs(s2pred-s2[:,0,:,:]))
+
+
+#make this into a nn module
+import torch.nn as nn
+
+class distregression(nn.Module):
+    def __init__(self):
+        super(distregression, self).__init__()
+
+    def forward(self, s1,blur):
+        #for +45 degrees lines
+        s1est1=s1-blur
+        s1est1=s1est1.unsqueeze(dim=1)
+        s1est1=torch.repeat_interleave(s1est1,s1.shape[1]+1,dim=1)
+        imgsize=s1.shape[-1]
+        bs=s1.shape[0]
+        n=s1.shape[1]
+
+        #for -45 degrees lines
+        s1est2=s1+blur
+        s1est2=s1est2.unsqueeze(dim=1)
+        s1est2=torch.repeat_interleave(s1est2,s1.shape[1]+1,dim=1)
+
+        mask=torch.zeros(2,bs,n+1,n,imgsize,imgsize)
+        for i in range(1,n+1):
+            mask[0,:,i,:i,:,:]=1
+        for i in range(0,n+1):
+            mask[1,:,i,i:,:]=1
+        s1est=s1est1*mask[1]+s1est2*mask[0]
+
+        s1eststd=torch.std(s1est,dim=2)
+        s1eststd[0,:,20,0]
+
+        argmin=torch.argmin(s1eststd,dim=1)
+
+        argmin=torch.unsqueeze(argmin,dim=1).unsqueeze(dim=2)
+        argmin=torch.repeat_interleave(argmin,repeats=n,dim=2)
+
+        sel=torch.gather(s1est,dim=1,index=argmin)
+        s2_pred=torch.mean(sel,dim=2)[:,0,:,:]
+        return s2_pred
+
+
+distreg=distregression()
+s2pred=distreg(s1,L)
+torch.mean(torch.abs(s2pred-s2[:,0,:,:]))
+
+
+        
+
 
 
 
