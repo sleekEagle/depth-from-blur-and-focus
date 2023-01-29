@@ -18,8 +18,6 @@ from glob import glob
 '''
 Main code for Ours-FV and Ours-DFV training 
 '''
-
-
 parser = argparse.ArgumentParser(description='DFVDFF')
 # === dataset =====
 parser.add_argument('--dataset', default=['FoD500','DDFF12'], nargs='+',  help='data Name')

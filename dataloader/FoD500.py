@@ -82,7 +82,7 @@ class ImageDataset(torch.utils.data.Dataset):
         mats_input = []
         mats_output = np.zeros((256, 256, 0))
         select_focdist_list=[]
-
+    
         # load existing image
         for i in range(len(self.req_f_idx)):
             if self.flag_rgb:
@@ -190,14 +190,18 @@ def FoD500Loader(data_dir, n_stack=6, scale=1, focus_dist=[0.1,.15,.3,0.7,1.5,10
 
     return dataset_train, dataset_valid
 
-''''
-dat_dir='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\fs_trainrand\\'
-dataset_train, dataset_valid=FoD500Loader(dat_dir, n_stack=6, scale=1, focus_dist=[0.1,.15,.3,0.7,1.5,100000])
-TrainImgLoader = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=4, batch_size=4, shuffle=True, drop_last=True)
-for batch_idx, (img_stack, gt_disp, foc_dist) in enumerate(TrainImgLoader):
-    break
 '''
+database='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\fs_trainingnew\\'
+DDFF12_train, DDFF12_val = [], []
+FoD500_train, FoD500_val = FoD500Loader(database, scale=1)
+FoD500_train, FoD500_val =  [FoD500_train], [FoD500_val]
 
+dataset_train = torch.utils.data.ConcatDataset(DDFF12_train  + FoD500_train )
+TrainImgLoader = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=0, batch_size=4, shuffle=True, drop_last=True)
+
+for batch_idx, (img_stack, gt_disp, foc_dist) in enumerate(TrainImgLoader):
+    continue
+'''
 
 
 
