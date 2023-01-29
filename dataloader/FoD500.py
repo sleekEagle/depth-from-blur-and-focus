@@ -1,5 +1,3 @@
-#! /usr/bin/python3
-
 import os
 import numpy as np
 from torch.utils.data import Dataset
@@ -32,7 +30,7 @@ class ImageDataset(torch.utils.data.Dataset):
     """Focal place dataset."""
 
     def __init__(self, root_dir, img_list, dpth_list,  transform_fnc=None, flag_shuffle=False, data_ratio=0,
-                 flag_inputs=[True, False], flag_outputs=[False, True], focus_dist=[0.1,.15,.3,0.7,1.5], focus_dist_req=[0.1,.15,.3,0.7,1.5], scale=1):
+                 flag_inputs=[True, False], flag_outputs=[False, True], focus_dist=[0.1,.15,.3,0.7,1.5], req_f_indx=[0,1,2,3,4,5],scale=1):
         self.root_dir = root_dir
         self.transform_fnc = transform_fnc
         self.flag_shuffle = flag_shuffle
@@ -40,13 +38,14 @@ class ImageDataset(torch.utils.data.Dataset):
         self.flag_rgb = flag_inputs[0]
         self.flag_coc = flag_inputs[1]
 
+        self.img_num = len(focus_dist)
         self.data_ratio = data_ratio
 
         self.flag_out_coc = flag_outputs[0]
         self.flag_out_depth = flag_outputs[1]
 
         self.focus_dist = focus_dist #torch.tensor(focus_dist) / scale
-        self.focus_dist_req = focus_dist_req #torch.tensor(focus_dist) / scale
+        self.req_f_idx=req_f_indx
         self.dpth_scale = scale
 
 
@@ -58,7 +57,6 @@ class ImageDataset(torch.utils.data.Dataset):
         ##### Load all images
         self.imglist_all = img_list
         self.imglist_dpt = dpth_list
-
 
     def __len__(self):
         return int(len(self.imglist_dpt))
@@ -72,44 +70,38 @@ class ImageDataset(torch.utils.data.Dataset):
         ##### Read and process an image
         idx_dpt = int(idx)
         img_dpt = read_dpt(self.root_dir + self.imglist_dpt[idx_dpt])
-        print(np.max(img_dpt))
 
         foc_dist = self.focus_dist.copy()
         mat_dpt = img_dpt.copy()[:, :, np.newaxis]
 
-        ind = idx * len(foc_dist)
-        num_list = list(range(len(foc_dist)))
+        ind = idx * self.img_num
+
+        num_list = list(range(self.img_num))
 
         # add RGB, CoC, Depth inputs
         mats_input = []
         mats_output = np.zeros((256, 256, 0))
+        select_focdist_list=[]
 
         # load existing image
-        for i in range(len(foc_dist)):
+        for i in range(len(self.req_f_idx)):
             if self.flag_rgb:
-                im = Image.open(self.root_dir + self.imglist_all[ind + num_list[i]])
+                select_focdist_list.append(foc_dist[self.req_f_idx[i]])
+                im = Image.open(self.root_dir + self.imglist_all[ind + self.req_f_idx[i]])
                 img_all = np.array(im)
                 # img Norm
                 mat_all = img_all.copy() / 255.
                 mat_all = (mat_all - self.img_mean) / self.img_std
                 mats_input.append(mat_all)
-        
         mats_input = np.stack(mats_input)
-        
-        #filter out the required focal lengths
-        avail_focus_dist=[i for i in foc_dist if (i in self.focus_dist_req)]
-        valididx=np.argwhere([(i in self.focus_dist_req) for i in foc_dist])
-        mats_input_selected=np.take(mats_input,valididx[:,0],axis=0) 
-
         if self.flag_out_depth:
             mats_output = np.concatenate((mats_output,(mat_dpt) * self.dpth_scale), axis=2) # first 5 is COC last is depth  self.dpth2disp
 
-        sample = {'input': mats_input_selected, 'output': mats_output}
+        sample = {'input': mats_input, 'output': mats_output}
 
         if self.transform_fnc:
             sample = self.transform_fnc(sample)
-
-        return sample['input'], sample['output'],(torch.tensor(avail_focus_dist)) * self.dpth_scale # to match the scale of DDFF12  self.dpth2disp
+        return sample['input'], sample['output'],(torch.tensor(select_focdist_list)) * self.dpth_scale # to match the scale of DDFF12  self.dpth2disp
 
 class ToTensor(object):
     def __call__(self, sample):
@@ -117,6 +109,7 @@ class ToTensor(object):
 
         mats_input = mats_input.transpose((0, 3, 1, 2))
         mats_output = mats_output.transpose((2, 0, 1))
+        # print(mats_input.shape, mats_output.shape)
         return {'input': torch.from_numpy(mats_input).float(),
                 'output': torch.from_numpy(mats_output).float()}
 
@@ -167,16 +160,18 @@ class RandomFilp(object):
 
         return {'input': np.ascontiguousarray(inputs), 'output': np.ascontiguousarray(target)}
 
-def FoD500Loader(data_dir, scale=1, focus_dist=[0.1, 0.15, 0.3, 0.7, 1.0, 1.5, 2.0, 3.0, 10.0, float('inf')],focus_dist_req=[0.1,.15,.3,0.7,1.5]):
 
-    img_train_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "All.tif" and int(f[:6]) < 200]
-    dpth_train_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "Dpt.exr" and int(f[:6]) < 200]
+
+def FoD500Loader(data_dir, n_stack=6, scale=1, focus_dist=[0.1,.15,.3,0.7,1.5,100000]):
+
+    img_train_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "All.tif" and int(f[:6]) < 400]
+    dpth_train_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "Dpt.exr" and int(f[:6]) < 400]
 
     img_train_list.sort()
     dpth_train_list.sort()
 
-    img_val_list =  [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "All.tif" and int(f[:6]) >= 200]
-    dpth_val_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "Dpt.exr" and int(f[:6]) >=200]
+    img_val_list =  [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "All.tif" and int(f[:6]) >= 400]
+    dpth_val_list = [f for f in listdir(data_dir) if isfile(join(data_dir, f)) and f[-7:] == "Dpt.exr" and int(f[:6]) >=400]
 
     img_val_list.sort()
     dpth_val_list.sort()
@@ -186,15 +181,23 @@ def FoD500Loader(data_dir, scale=1, focus_dist=[0.1, 0.15, 0.3, 0.7, 1.0, 1.5, 2
                         RandomFilp(0.5),
                         ToTensor()])
     dataset_train = ImageDataset(root_dir=data_dir, img_list=img_train_list, dpth_list=dpth_train_list,
-                                 transform_fnc=train_transform,  focus_dist=focus_dist,
-                                 focus_dist_req=focus_dist_req, scale=scale)
+                                 transform_fnc=train_transform,  focus_dist=focus_dist, scale=scale)
 
     val_transform = transforms.Compose([ToTensor()])
     dataset_valid = ImageDataset(root_dir=data_dir, img_list=img_val_list, dpth_list=dpth_val_list,
-                                 transform_fnc=val_transform, focus_dist=focus_dist, 
-                                 focus_dist_req=focus_dist_req,scale=scale)
+                                 transform_fnc=val_transform, focus_dist=focus_dist, scale=scale)
 
 
     return dataset_train, dataset_valid
+
+''''
+dat_dir='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\fs_trainrand\\'
+dataset_train, dataset_valid=FoD500Loader(dat_dir, n_stack=6, scale=1, focus_dist=[0.1,.15,.3,0.7,1.5,100000])
+TrainImgLoader = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=4, batch_size=4, shuffle=True, drop_last=True)
+for batch_idx, (img_stack, gt_disp, foc_dist) in enumerate(TrainImgLoader):
+    break
+'''
+
+
 
 
