@@ -44,7 +44,15 @@ class DFFNet(nn.Module):
         return torch.cat([vol_out, vol[:,:, -1:]], dim=2) # last elem is  vol[:,:, -1] - 0
 
     def forward(self, stack, focal_dist):
+        #create the mask 
         b, n, c, h, w = stack.shape
+
+        mask=torch.zeros(2,b,n+1,n,w,w)
+        for i in range(1,n+1):
+            mask[0,:,i,:i,:,:]=1
+        for i in range(0,n+1):
+            mask[1,:,i,i:,:]=1
+            
         input_stack = stack.reshape(b*n, c, h , w)
 
         conv4, conv3, conv2, conv1  = self.feature_extraction(input_stack)
@@ -115,7 +123,7 @@ class DFFNet(nn.Module):
         #create s1
         s1=torch.unsqueeze(focal_dist,dim=2).unsqueeze(dim=3)
         s1=torch.repeat_interleave(s1,cost3.shape[-1],dim=2).repeat_interleave(cost3.shape[-1],dim=3)
-        pred3=self.distreg(s1,cost3)
+        pred3=self.distreg(s1,cost3,mask)
         std3=0
 
         # different output based on level
@@ -125,13 +133,13 @@ class DFFNet(nn.Module):
             if self.level >= 2:
                 cost4 = F.interpolate(cost4, [h, w], mode='bilinear')
                 #pred4, std4 = self.disp_reg(F.softmax(cost4, 1), focal_dist, uncertainty=True)
-                pred4=self.distreg(s1,cost4)
+                pred4=self.distreg(s1,cost4,mask)
                 std4=0
                 stacked.append(pred4)
                 stds.append(std4)
                 if self.level >=3 :
                     cost5 = F.interpolate((cost5).unsqueeze(1), [focal_dist.shape[1], h, w], mode='trilinear').squeeze(1)
-                    pred5=self.distreg(s1,cost5)
+                    pred5=self.distreg(s1,cost5,mask)
                     std5=0
                     #pred5, std5 = self.disp_reg(F.softmax(cost5, 1), focal_dist, uncertainty=True)
                     stacked.append(pred5)
@@ -139,7 +147,7 @@ class DFFNet(nn.Module):
                     if self.level >=4 :
                         cost6 = F.interpolate((cost6).unsqueeze(1), [focal_dist.shape[1], h, w], mode='trilinear').squeeze(1)
                         #pred6, std6 = self.disp_reg(F.softmax(cost6, 1), focal_dist, uncertainty=True)
-                        pred6=self.distreg(s1,cost6)
+                        pred6=self.distreg(s1,cost6,mask)
                         std6=0
                         stacked.append(pred6)
                         stds.append(std6)
@@ -150,10 +158,11 @@ class DFFNet(nn.Module):
 model = DFFNet(clean=False,level=4, use_diff=1)
 model = nn.DataParallel(model)
 model.train()
-#model.cuda()
+model.cuda()
 
 img_stack=torch.rand(2,5,3,256,256)
 foc_dist=torch.rand(2,5)
+foc_dist.cuda().get_device()
 
 s1=torch.unsqueeze(foc_dist,dim=2).unsqueeze(dim=3)
 s1=torch.repeat_interleave(s1,cost3.shape[-1],dim=2).repeat_interleave(cost3.shape[-1],dim=3)
