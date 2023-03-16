@@ -34,14 +34,14 @@ def get_s2est(s1,L):
 
     return S_est
 
-s2=0.3
-s1,L=get_sim_blur(1.4,2.7,5,0.001,s2)
+s2=1.6
+s1,L=get_sim_blur(1.4,2.7,5,0.01,s2)
 
 #plot the data
 fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 plt.plot(s1,L,marker='o',color='r')
-#plt.show()
+plt.show()
 
 S_est=get_s2est(s1,L)
 print(S_est)
@@ -49,7 +49,6 @@ print(S_est)
 
 #do this with pytorch
 import torch
-
 s2=0.3
 s1,L=get_sim_blur(100,104,5,0.1,s2)
 
@@ -57,7 +56,7 @@ s1,L=get_sim_blur(100,104,5,0.1,s2)
 fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 plt.plot(s1,L,marker='o',color='r')
-#plt.show()
+plt.show()
 
 s1=torch.from_numpy(s1)
 L=torch.from_numpy(L)
