@@ -1,11 +1,13 @@
 import argparse
 import cv2
-from models import DFFNet as DFFNet
+from models import LinDFF
 import os
 import time
 from models.submodule import *
 
 from torch.utils.data import DataLoader
+from dataloader import focalblender
+
 
 
 import  matplotlib
@@ -19,15 +21,14 @@ Main code for Ours-FV and Ours-DFV test on FoD500 dataset
 # os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
 parser = argparse.ArgumentParser(description='DFVDFF')
-parser.add_argument('--data_path', default='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\focal_data\\',help='test data path')
-#parser.add_argument('--data_path', default='C:\\Users\\lahir\\focusdata\\fs_6\\fs_6\\',help='test data path')
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\models\\best.tar', help='model path')
+parser.add_argument('--data_path', default='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\',help='test data path')
+parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b2_lvl1\\best.tar', help='model path')
 parser.add_argument('--outdir', default='C:\\Users\\lahir\\results\\',help='output dir')
 
 parser.add_argument('--stack_num', type=int ,default=5, help='num of image in a stack, please take a number in [2, 10], change it according to the loaded checkpoint!')
-parser.add_argument('--use_diff', default=1, choices=[0,1], help='if use differential images as input, change it according to the loaded checkpoint!')
+parser.add_argument('--use_diff', default=0, choices=[0,1], help='if use differential images as input, change it according to the loaded checkpoint!')
 
-parser.add_argument('--level', type=int, default=4, help='num of layers in network, please take a number in [1, 4]')
+parser.add_argument('--level', type=int, default=1, help='num of layers in network, please take a number in [1, 4]')
 parser.add_argument('--focusdist', nargs='+', default=[0.1, 0.15, 0.3, 0.7, 1.0, 1.5, 2.0, 3.0, 10.0, float('inf')],  help='focal distances included in the dataset')
 parser.add_argument('--focusdistreq', nargs='+', default=[0.1,.15,.3,0.7,1.5],  help='focal dists required for the model')
 args = parser.parse_args()
@@ -44,7 +45,8 @@ else:
 from dataloader import FoD500Loader
 
 # construct model
-model = DFFNet( clean=False,level=args.level, use_diff=args.use_diff)
+
+model = LinDFF(clean=False,level=args.level, use_diff=args.use_diff)
 model = nn.DataParallel(model)
 model.cuda()
 ckpt_name = os.path.basename(os.path.dirname(args.loadmodel))# we use the dirname to indicate training setting
@@ -69,14 +71,22 @@ def main(image_size = (256, 256)):
 
     focus_dist=args.focusdist
     focus_dist_req=args.focusdistreq
-    dataset_train, dataset_validation = FoD500Loader(args.data_path, scale=1,focus_dist=focus_dist,focus_dist_req=focus_dist_req)
-    dataloader = torch.utils.data.DataLoader(dataset=dataset_validation, num_workers=1, batch_size=1, shuffle=False)
+
+    loaders, total_steps = focalblender.load_data(args.data_path,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
+        BATCH_SIZE=2,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
+    dataloader=loaders[1]
 
     # metric prepare
     test_num = len(dataloader)
     time_list = []
     std_sum = 0
-    for inx, (img_stack, gt_disp, foc_dist) in enumerate(dataloader):
+
+    for inx, sample_batch in enumerate(dataloader):
+        img_stack=sample_batch['input'].float()
+        gt_disp=sample_batch['output'][:,-1,:,:]
+        gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
+        foc_dist=sample_batch['fdist'].float()
+
         # if inx not in  [5, 64,67]:continue
         if inx % 10 == 0:
             print('processing: {}/{}'.format(inx, test_num))
@@ -89,7 +99,8 @@ def main(image_size = (256, 256)):
             pred_disp, std, focusMap = model(img_stack, (foc_dist))
             torch.cuda.synchronize()
             ttime = (time.time() - start_time); print('time = %.2f' % (ttime*1000) )
-            std_sum += std.mean()
+            if not type(std)==int:
+                std_sum += std.mean()
 
         pred_disp = pred_disp.squeeze().cpu().numpy()[:image_size[0], :image_size[1]]
 

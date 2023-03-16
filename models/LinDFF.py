@@ -37,6 +37,7 @@ class LinDFF(nn.Module):
 
         # reg
         self.distreg=distregression()
+        self.disp_reg=disparityregression(1)
 
 
     def diff_feat_volume1(self, vol):
@@ -113,9 +114,9 @@ class LinDFF(nn.Module):
         
         #remove the infinity focused values
         cost3=cost3[:,0:n-1,:,:]
-        cost4=cost4[:,0:n-1,:,:]
-        cost5=cost5[:,0:n-1,:,:]
-        cost6=cost6[:,0:n-1,:,:]
+        #cost4=cost4[:,0:n-1,:,:]
+        #cost5=cost5[:,0:n-1,:,:]
+        #cost6=cost6[:,0:n-1,:,:]
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
         #pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
@@ -124,6 +125,8 @@ class LinDFF(nn.Module):
         s1=torch.repeat_interleave(s1,cost3.shape[-1],dim=2).repeat_interleave(cost3.shape[-1],dim=3)
         s1=s1[:,0:n-1,:,:]
         pred3=self.distreg(s1,cost3)
+        #print('focal_dist:'+str(focal_dist.shape))
+        #pred3, std3 = self.disp_reg(F.softmax(cost3, 1), focal_dist[:,0:-1], uncertainty=True)
         std3=0
 
         # different output based on level
@@ -153,8 +156,9 @@ class LinDFF(nn.Module):
                         stds.append(std6)
             return stacked, stds, None
         else:
-            return pred3,torch.squeeze(std3), F.softmax(cost3,1).squeeze()
-
+            return pred3,std3, F.softmax(cost3,1).squeeze()
+        
+'''
 model = LinDFF(clean=False,level=4, use_diff=0)
 model = nn.DataParallel(model)
 model.train()
@@ -166,9 +170,22 @@ foc_dist.cuda().get_device()
 
 s1=torch.unsqueeze(foc_dist,dim=2).unsqueeze(dim=3)
 #s1=torch.repeat_interleave(s1,cost3.shape[-1],dim=2).repeat_interleave(cost3.shape[-1],dim=3)
-
 out=model(img_stack,foc_dist)
 
+#test with real data
+from dataloader import DDFF12,focalblender
+blenderpath='C:\\Users\\lahir\\focalstacks\\datasets\\defocusnet_N1\\'
+loaders, total_steps = focalblender.load_data(blenderpath,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
+        BATCH_SIZE=2,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
+
+for batch_idx, sample_batch in enumerate(loaders[0]):
+    img_stack=sample_batch['input'].float()
+    gt_disp=sample_batch['output'][:,-1,:,:]
+    gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
+    foc_dist=sample_batch['fdist'].float()
+
+    model(img_stack.cuda(),foc_dist.cuda())
+'''
 
 '''
 cost=torch.rand(2,5,256,256) 

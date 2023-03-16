@@ -20,7 +20,7 @@ Main code for Ours-FV and Ours-DFV training
 '''
 parser = argparse.ArgumentParser(description='DFVDFF')
 # === dataset =====
-parser.add_argument('--dataset', default=['FoD500'], nargs='+',  help='data Name')
+parser.add_argument('--dataset', default=['blender'], nargs='+',  help='data Name')
 parser.add_argument('--DDFF12_pth', default=None, help='DDFF12 data path')
 parser.add_argument('--FoD_pth', default='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\', help='FOD data path')
 parser.add_argument('--FoD_scale', default=1.0,
@@ -28,8 +28,8 @@ parser.add_argument('--FoD_scale', default=1.0,
                          'empirically we find this scale help improve the model performance for our method and DDFF')
 # ==== hypo-param =========
 parser.add_argument('--stack_num', type=int ,default=6, help='num of image in a stack, please take a number in [2, 10]')
-parser.add_argument('--level', type=int ,default=4, help='num of layers in network, please take a number in [1, 4]')
-parser.add_argument('--use_diff', default=1, type=int, choices=[0,1], help='if use differential feat, 0: None,  1: diff cost volume')
+parser.add_argument('--level', type=int ,default=1, help='num of layers in network, please take a number in [1, 4]')
+parser.add_argument('--use_diff', default=0, type=int, choices=[0,1], help='if use differential feat, 0: None,  1: diff cost volume')
 parser.add_argument('--lvl_w', nargs='+', default=[8./15, 4./15, 2./15, 1./15],  help='for std weight')
 
 parser.add_argument('--lr', type=float, default=0.0001,  help='learning rate')
@@ -103,15 +103,21 @@ if 'FoD500' in args.dataset:
 else:
     FoD500_train, FoD500_val = [], []
 
-dataset_train = torch.utils.data.ConcatDataset(DDFF12_train  + FoD500_train )
-dataset_val = torch.utils.data.ConcatDataset(FoD500_val) # we use the model perform better on  DDFF12_val
+if 'blender' not in args.dataset:
+    dataset_train = torch.utils.data.ConcatDataset(DDFF12_train  + FoD500_train )
+    dataset_val = torch.utils.data.ConcatDataset(FoD500_val) # we use the model perform better on  DDFF12_val
 
-TrainImgLoader = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=4, batch_size=args.batchsize, shuffle=True, drop_last=True)
-ValImgLoader = torch.utils.data.DataLoader(dataset=dataset_val, num_workers=1, batch_size=12, shuffle=False, drop_last=True)
+    TrainImgLoader = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=4, batch_size=args.batchsize, shuffle=True, drop_last=True)
+    ValImgLoader = torch.utils.data.DataLoader(dataset=dataset_val, num_workers=1, batch_size=12, shuffle=False, drop_last=True)
 
-print('%d batches per epoch'%(len(TrainImgLoader)))
+    print('%d batches per epoch'%(len(TrainImgLoader)))
 
-
+if 'blender' in args.dataset:
+    from dataloader import focalblender
+    blenderpath='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\'
+    loaders, total_steps = focalblender.load_data(blenderpath,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
+        BATCH_SIZE=2,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
+    
 # =========== Train func. =========
 def train(img_stack_in, disp, foc_dist):
     model.train()
@@ -130,13 +136,12 @@ def train(img_stack_in, disp, foc_dist):
     beta_scale = 1 # smooth l1 do not have beta in 1.6, so we increase the input to and then scale back -- no significant improve according to our trials
     stacked, stds, _ = model(img_stack, foc_dist)
 
-
     loss = 0
     for i, (pred, std) in enumerate(zip(stacked, stds)):
         pred_=torch.unsqueeze(pred,dim=1)
         _cur_loss = F.smooth_l1_loss(pred_[mask] * beta_scale, gt_disp[mask]* beta_scale, reduction='none') / beta_scale
         loss = loss + args.lvl_w[i] * _cur_loss.mean()
-
+    torch.autograd.set_detect_anomaly(True)
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
     optimizer.step()
@@ -162,6 +167,7 @@ def valid(img_stack_in,disp, foc_dist):
     #----
     with torch.no_grad():
         pred_disp, _, _ = model(img_stack, foc_dist)
+        pred_disp=torch.unsqueeze(pred_disp,dim=1)
         loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
 
     vis = {}
@@ -202,13 +208,18 @@ def main():
         train_log.scalar_summary('lr_epoch', lr_, epoch)
 
         ## training ##
-        for batch_idx, (img_stack, gt_disp, foc_dist) in enumerate(TrainImgLoader):
+        for batch_idx, sample_batch in enumerate(loaders[0]):
+            img_stack=sample_batch['input'].float()
+            gt_disp=sample_batch['output'][:,-1,:,:]
+            gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
+            foc_dist=sample_batch['fdist'].float()
+
             start_time = time.time()
             loss, vis = train(img_stack, gt_disp, foc_dist)
 
             if total_iters %10 == 0:
                 torch.cuda.synchronize()
-                print('epoch %d:  %d/ %d train_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(TrainImgLoader), loss, time.time() - start_time))
+                print('epoch %d:  %d/ %d train_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[0]), loss, time.time() - start_time))
                 train_log.scalar_summary('loss_batch',loss, total_iters)
 
             total_train_loss += loss
@@ -216,7 +227,7 @@ def main():
 
         # record the last batch
         write_log(vis, img_stack[:, 0], img_stack[:, -1], gt_disp, train_log, epoch, thres=0.05)
-        train_log.scalar_summary('avg_loss', total_train_loss / len(TrainImgLoader), epoch)
+        train_log.scalar_summary('avg_loss', total_train_loss / len(loaders[0]), epoch)
 
         # save model
         torch.save({
@@ -236,18 +247,23 @@ def main():
         # Vaild
         if epoch % 5 == 0:
             total_val_loss = 0
-            for batch_idx, (img_stack, gt_disp, foc_dist) in enumerate(ValImgLoader):
+
+            for batch_idx, sample_batch in enumerate(loaders[1]):
+                img_stack=sample_batch['input'].float()
+                gt_disp=sample_batch['output'][:,-1,:,:]
+                gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
+                foc_dist=sample_batch['fdist'].float()
                 with torch.no_grad():
                     start_time = time.time()
                     val_loss, viz = valid(img_stack, gt_disp, foc_dist)
 
                 if batch_idx %10 == 0:
                     torch.cuda.synchronize()
-                    print('[val] epoch %d : %d/%d val_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(ValImgLoader), val_loss, time.time() - start_time))
+                    print('[val] epoch %d : %d/%d val_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[1]), val_loss, time.time() - start_time))
                 total_val_loss += val_loss
 
 
-            avg_val_loss = total_val_loss / len(ValImgLoader)
+            avg_val_loss = total_val_loss / len(loaders[1])
             err_thres = 0.05 # for validation purpose
             write_log(viz, img_stack[:, 0], img_stack[:, -1], gt_disp, val_log, epoch, thres=err_thres)
             val_log.scalar_summary('avg_loss', avg_val_loss, epoch)

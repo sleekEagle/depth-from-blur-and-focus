@@ -10,10 +10,9 @@ Code for Ours-FV and Ours-DFV evaluation on FoD500 dataset
 
 # For FoD500 eval, please run ''FoD_test.py'' first and set res_path as the outdir path in ''FoD_test.py''
 parser = argparse.ArgumentParser(description='DFVDFF')
-parser.add_argument('--res_path', default='C:\\Users\\lahir\\results\\models\\', help='test result path')
+parser.add_argument('--res_path', default='C:\\Users\\lahir\\results\\blender_scale1.0_nsck6_lr0.0001_ep700_b2_lvl1\\', help='test result path')
 parser.add_argument('--focusdistreq', nargs='+', default=[0.1,.15,.3,0.7,1.5],  help='focal dists required for the model')
 args = parser.parse_args()
-
 
 
 def calmetrics( pred, target, mse_factor, accthrs, bumpinessclip=0.05, ignore_zero=True):
