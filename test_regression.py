@@ -178,10 +178,34 @@ class distregression(nn.Module):
         s2_pred=torch.mean(sel,dim=2)[:,0,:,:]
         return s2_pred
 
-
 distreg=distregression()
 s2pred=distreg(s1,L)
 torch.mean(torch.abs(s2pred-s2[:,0,:,:]))
+
+#test the module in models/submodule - using cuda
+#start from a fresh terminal
+from models.submodule import *
+
+bs=4
+n=5
+imgsize=24
+s2mean=200
+s1,L,s2=get_sim_blur_3d(bs=bs,n=n,imgsize=imgsize,noise_std=0.00001,s2mean=s2mean)
+s1=s1.cuda()
+L=L.cuda()
+s2=s2.cuda()
+distreg=distregression()
+s2pred=distreg(s1,L)
+torch.mean(torch.abs(s2pred-s2[:,0,:,:]))
+
+
+
+
+
+
+
+
+
 
 
         

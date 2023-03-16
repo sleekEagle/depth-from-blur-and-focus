@@ -82,7 +82,7 @@ class distregression(nn.Module):
     def __init__(self):
         super(distregression, self).__init__()
 
-    def forward(self, s1,blur,mask):
+    def forward(self, s1,blur):
         #for +""45 degrees lines
         s1est1=s1-blur
         s1est1=s1est1.unsqueeze(dim=1)
