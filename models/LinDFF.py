@@ -8,9 +8,9 @@ from models.featExactor2 import FeatExactor
 
 # Ours-FV (use_diff=0) and Ours-DFV (use_diff=1) model
 
-class DFFNet(nn.Module):
+class LinDFF(nn.Module):
     def __init__(self, clean,level=1, use_diff=1):
-        super(DFFNet, self).__init__()
+        super(LinDFF, self).__init__()
 
         self.clean = clean
         self.feature_extraction = FeatExactor()
@@ -91,11 +91,11 @@ class DFFNet(nn.Module):
             
             #divide cost (estimated blur) with blur when focused at infinity (i.e. last image of the focal stack) 
             cost6+=1e-5
-            print('cost6:'+str(cost6.shape))
+            #print('cost6:'+str(cost6.shape))
             infblur6=torch.unsqueeze(cost6[:,-1,:,:],dim=1)
             infblur6=torch.repeat_interleave(infblur6,cost6.shape[1],dim=1)
             cost6=cost6/infblur6
-            print('post division cost6:'+str(cost6.shape))
+            #print('post division cost6:'+str(cost6.shape))
 
             feat5 = torch.cat((feat6_2x, vol3), dim=1)
             feat5_2x, cost5 = self.decoder5(feat5)
@@ -154,20 +154,21 @@ class DFFNet(nn.Module):
             return stacked, stds, None
         else:
             return pred3,torch.squeeze(std3), F.softmax(cost3,1).squeeze()
-
-model = DFFNet(clean=False,level=4, use_diff=1)
+'''
+model = LinDFF(clean=False,level=4, use_diff=1)
 model = nn.DataParallel(model)
 model.train()
 model.cuda()
 
-img_stack=torch.rand(2,5,3,256,256)
-foc_dist=torch.rand(2,5)
+img_stack=torch.rand(2,6,3,256,256).cuda()
+foc_dist=torch.rand(2,6).cuda()
 foc_dist.cuda().get_device()
 
 s1=torch.unsqueeze(foc_dist,dim=2).unsqueeze(dim=3)
 s1=torch.repeat_interleave(s1,cost3.shape[-1],dim=2).repeat_interleave(cost3.shape[-1],dim=3)
 
 out=model(img_stack,foc_dist)
+'''
 
 '''
 cost=torch.rand(2,5,256,256) 

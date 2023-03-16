@@ -177,7 +177,7 @@ def FoD500Loader(data_dir, n_stack=6, scale=1, focus_dist=[0.1,.15,.3,0.7,1.5,10
     dpth_val_list.sort()
 
     train_transform = transforms.Compose([
-                        RandomCrop(224),
+                        RandomCrop(256),
                         RandomFilp(0.5),
                         ToTensor()])
     dataset_train = ImageDataset(root_dir=data_dir, img_list=img_train_list, dpth_list=dpth_train_list,
@@ -191,7 +191,7 @@ def FoD500Loader(data_dir, n_stack=6, scale=1, focus_dist=[0.1,.15,.3,0.7,1.5,10
     return dataset_train, dataset_valid
 
 '''
-database='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\fs_trainingnew\\'
+database='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\'
 DDFF12_train, DDFF12_val = [], []
 FoD500_train, FoD500_val = FoD500Loader(database, scale=1)
 FoD500_train, FoD500_val =  [FoD500_train], [FoD500_val]
@@ -202,6 +202,7 @@ TrainImgLoader = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=
 for batch_idx, (img_stack, gt_disp, foc_dist) in enumerate(TrainImgLoader):
     continue
 '''
+
 
 
 

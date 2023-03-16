@@ -10,7 +10,7 @@ import torch.utils.data
 from torch.autograd import Variable
 import torch.nn.functional as F
 import time
-from models import DFFNet
+from models import LinDFF
 from utils import logger, write_log
 torch.backends.cudnn.benchmark=True
 from glob import glob
@@ -20,9 +20,9 @@ Main code for Ours-FV and Ours-DFV training
 '''
 parser = argparse.ArgumentParser(description='DFVDFF')
 # === dataset =====
-parser.add_argument('--dataset', default=['FoD500','DDFF12'], nargs='+',  help='data Name')
+parser.add_argument('--dataset', default=['FoD500'], nargs='+',  help='data Name')
 parser.add_argument('--DDFF12_pth', default=None, help='DDFF12 data path')
-parser.add_argument('--FoD_pth', default='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\fs_trainrand\\', help='FOD data path')
+parser.add_argument('--FoD_pth', default='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\', help='FOD data path')
 parser.add_argument('--FoD_scale', default=1.0,
                     help='FoD dataset gt scale for loss balance, because FoD_GT: 0.1-1.5, DDFF12_GT 0.02-0.28, '
                          'empirically we find this scale help improve the model performance for our method and DDFF')
@@ -34,11 +34,11 @@ parser.add_argument('--lvl_w', nargs='+', default=[8./15, 4./15, 2./15, 1./15], 
 
 parser.add_argument('--lr', type=float, default=0.0001,  help='learning rate')
 parser.add_argument('--epochs', type=int, default=700, help='number of epochs to train')
-parser.add_argument('--batchsize', type=int, default=20, help='samples per batch')
+parser.add_argument('--batchsize', type=int, default=2, help='samples per batch')
 
 # ====== log path ==========
 parser.add_argument('--loadmodel', default=None,   help='path to pre-trained checkpoint if any')
-parser.add_argument('--savemodel', default=None, help='save path')
+parser.add_argument('--savemodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
 args = parser.parse_args()
@@ -53,7 +53,7 @@ start_epoch = 1
 best_loss = 1e5
 total_iter = 0
 
-model = DFFNet(clean=False,level=args.level, use_diff=args.use_diff)
+model = LinDFF(clean=False,level=args.level, use_diff=args.use_diff)
 model = nn.DataParallel(model)
 model.cuda()
 
@@ -104,7 +104,7 @@ else:
     FoD500_train, FoD500_val = [], []
 
 dataset_train = torch.utils.data.ConcatDataset(DDFF12_train  + FoD500_train )
-dataset_val = torch.utils.data.ConcatDataset(DDFF12_val) # we use the model perform better on  DDFF12_val
+dataset_val = torch.utils.data.ConcatDataset(FoD500_val) # we use the model perform better on  DDFF12_val
 
 TrainImgLoader = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=4, batch_size=args.batchsize, shuffle=True, drop_last=True)
 ValImgLoader = torch.utils.data.DataLoader(dataset=dataset_val, num_workers=1, batch_size=12, shuffle=False, drop_last=True)
@@ -133,7 +133,8 @@ def train(img_stack_in, disp, foc_dist):
 
     loss = 0
     for i, (pred, std) in enumerate(zip(stacked, stds)):
-        _cur_loss = F.smooth_l1_loss(pred[mask] * beta_scale, gt_disp[mask]* beta_scale, reduction='none') / beta_scale
+        pred_=torch.unsqueeze(pred,dim=1)
+        _cur_loss = F.smooth_l1_loss(pred_[mask] * beta_scale, gt_disp[mask]* beta_scale, reduction='none') / beta_scale
         loss = loss + args.lvl_w[i] * _cur_loss.mean()
 
     loss.backward()
