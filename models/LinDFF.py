@@ -154,7 +154,7 @@ class LinDFF(nn.Module):
             return stacked, stds, None
         else:
             return pred3,torch.squeeze(std3), F.softmax(cost3,1).squeeze()
-'''
+
 model = LinDFF(clean=False,level=4, use_diff=1)
 model = nn.DataParallel(model)
 model.train()
