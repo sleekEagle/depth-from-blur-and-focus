@@ -89,7 +89,6 @@ class DFFNet(nn.Module):
             _, cost3 = self.decoder3(feat3)
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
-        print('cost3 : '+ str(cost3.shape))
         pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
 
         # different output based on level

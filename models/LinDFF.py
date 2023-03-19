@@ -38,6 +38,8 @@ class LinDFF(nn.Module):
         # reg
         self.distreg=distregression()
         self.disp_reg=disparityregression(1)
+        self.f=2.9e-3
+        self.clip=0.01
 
 
     def diff_feat_volume1(self, vol):
@@ -67,6 +69,10 @@ class LinDFF(nn.Module):
 
         if self.level == 1:
             _, cost3 = self.decoder3(vol1)
+            infblur3=torch.unsqueeze(cost3[:,-1,:,:],dim=1)
+            infblur3=torch.repeat_interleave(infblur3,cost3.shape[1],dim=1)
+            infblur3=torch.clamp(infblur3,min=0.1)
+            cost3=cost3/infblur3
 
         elif self.level == 2:
             feat4_2x, cost4 = self.decoder4(vol2)
@@ -83,40 +89,47 @@ class LinDFF(nn.Module):
 
         else:
             feat6_2x, cost6 = self.decoder6(vol4)
-            
-            #divide cost (estimated blur) with blur when focused at infinity (i.e. last image of the focal stack) 
-            cost6+=1e-5
-            #print('cost6:'+str(cost6.shape))
-            infblur6=torch.unsqueeze(cost6[:,-1,:,:],dim=1)
-            infblur6=torch.repeat_interleave(infblur6,cost6.shape[1],dim=1)
-            cost6=cost6/infblur6
 
             feat5 = torch.cat((feat6_2x, vol3), dim=1)
             feat5_2x, cost5 = self.decoder5(feat5)
-            cost5+=1e-5
-            infblur5=torch.unsqueeze(cost5[:,-1,:,:],dim=1)
-            infblur5=torch.repeat_interleave(infblur5,cost5.shape[1],dim=1)
-            cost5=cost5/infblur5
 
             feat4 = torch.cat((feat5_2x, vol2), dim=1)            
             feat4_2x, cost4 = self.decoder4(feat4)
-            cost4+=1e-5
-            infblur4=torch.unsqueeze(cost4[:,-1,:,:],dim=1)
-            infblur4=torch.repeat_interleave(infblur4,cost4.shape[1],dim=1)
-            cost4=cost4/infblur4
 
             feat3 = torch.cat((feat4_2x, vol1), dim=1)
             _, cost3 = self.decoder3(feat3)
-            cost3+=1e-5
+
+            #divide cost (estimated blur) with blur when focused at infinity (i.e. last image of the focal stack) 
+            #cost6=torch.add(cost6,1e-5)
+            #print('cost6:'+str(cost6.shape))
+            infblur6=torch.unsqueeze(cost6[:,-1,:,:],dim=1)
+            infblur6=torch.repeat_interleave(infblur6,cost6.shape[1],dim=1)
+            infblur6=torch.clamp(infblur6,min=self.clip)
+            cost6=cost6/infblur6
+
+            # cost5=torch.add(cost5,1e-5)
+            infblur5=torch.unsqueeze(cost5[:,-1,:,:],dim=1)
+            infblur5=torch.repeat_interleave(infblur5,cost5.shape[1],dim=1)
+            infblur5=torch.clamp(infblur5,min=self.clip)
+            cost5=cost5/infblur5
+            
+            # cost4=torch.add(cost4,1e-5)
+            infblur4=torch.unsqueeze(cost4[:,-1,:,:],dim=1)
+            infblur4=torch.repeat_interleave(infblur4,cost4.shape[1],dim=1)
+            infblur4=torch.clamp(infblur4,min=self.clip)
+            cost4=cost4/infblur4
+            
+            # cost3=torch.add(cost3,1e-5)
             infblur3=torch.unsqueeze(cost3[:,-1,:,:],dim=1)
             infblur3=torch.repeat_interleave(infblur3,cost3.shape[1],dim=1)
+            infblur3=torch.clamp(infblur3,min=self.clip)
             cost3=cost3/infblur3
         
         #remove the infinity focused values
         cost3=cost3[:,0:n-1,:,:]
-        #cost4=cost4[:,0:n-1,:,:]
-        #cost5=cost5[:,0:n-1,:,:]
-        #cost6=cost6[:,0:n-1,:,:]
+        cost4=cost4[:,0:n-1,:,:]
+        cost5=cost5[:,0:n-1,:,:]
+        cost6=cost6[:,0:n-1,:,:]
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
         #pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
@@ -124,6 +137,9 @@ class LinDFF(nn.Module):
         s1=torch.unsqueeze(focal_dist,dim=2).unsqueeze(dim=3)
         s1=torch.repeat_interleave(s1,cost3.shape[-1],dim=2).repeat_interleave(cost3.shape[-1],dim=3)
         s1=s1[:,0:n-1,:,:]
+
+        #multiply blur with (s1-f)
+        cost3=cost3*(s1-self.f)
         pred3=self.distreg(s1,cost3)
         #print('focal_dist:'+str(focal_dist.shape))
         #pred3, std3 = self.disp_reg(F.softmax(cost3, 1), focal_dist[:,0:-1], uncertainty=True)
@@ -132,31 +148,38 @@ class LinDFF(nn.Module):
         # different output based on level
         stacked = [pred3]
         stds = [std3]
+        cost_stacked=[cost3]
         if self.training :
             if self.level >= 2:
                 cost4 = F.interpolate(cost4, [h, w], mode='bilinear')
                 #pred4, std4 = self.disp_reg(F.softmax(cost4, 1), focal_dist, uncertainty=True)
+                cost4=cost4*(s1-self.f)
                 pred4=self.distreg(s1,cost4)
                 std4=0
                 stacked.append(pred4)
                 stds.append(std4)
+                cost_stacked.append(cost4)
                 if self.level >=3 :
                     cost5 = F.interpolate(cost5, [h, w], mode='bilinear')
+                    cost5=cost5*(s1-self.f)
                     pred5=self.distreg(s1,cost5)
                     std5=0
                     #pred5, std5 = self.disp_reg(F.softmax(cost5, 1), focal_dist, uncertainty=True)
                     stacked.append(pred5)
                     stds.append(std5)
+                    cost_stacked.append(cost5)
                     if self.level >=4 :
                         cost6 = F.interpolate(cost6, [h, w], mode='bilinear')
+                        cost6=cost6*(s1-self.f)
                         #pred6, std6 = self.disp_reg(F.softmax(cost6, 1), focal_dist, uncertainty=True)
                         pred6=self.distreg(s1,cost6)
                         std6=0
                         stacked.append(pred6)
                         stds.append(std6)
-            return stacked, stds, None
+                        cost_stacked.append(cost6)
+            return stacked, stds, cost_stacked
         else:
-            return pred3,std3, F.softmax(cost3,1).squeeze()
+            return pred3,std3,cost3
         
 '''
 model = LinDFF(clean=False,level=4, use_diff=0)

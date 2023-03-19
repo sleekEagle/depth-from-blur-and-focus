@@ -23,6 +23,14 @@ def read_dpt(img_dpt_path):
     dpt.shape = (size[1], size[0])
     return dpt
 
+'''
+output |s2-s1|
+'''
+def get_blur(s1,s2):
+    blur=abs(s2-s1)
+    return blur
+
+
 
 '''
 All in-focus image is attached to the input matrix after the RGB image
@@ -100,6 +108,7 @@ class ImageDataset(torch.utils.data.Dataset):
         # add RGB, CoC, Depth inputs
         mats_input = np.zeros((256, 256, 3,0))
         mats_output = np.zeros((256, 256, 0))
+        mats_blur = np.zeros((256, 256, 0))
 
         ##### Read and process an image
         idx_dpt = int(idx)
@@ -125,29 +134,37 @@ class ImageDataset(torch.utils.data.Dataset):
             mat_all = img_all.copy() / 255.
             mat_all=np.expand_dims(mat_all,axis=-1)
             mats_input = np.concatenate((mats_input, mat_all), axis=3)
-            
+
+            img_msk = get_blur(self.focus_dist[req], img_dpt)
+            img_msk = img_msk
+            #img_msk = np.clip(img_msk, 0, 1.0e-4) / 1.0e-4
+            mat_msk = img_msk.copy()[:, :, np.newaxis]
+            #append blur to the output
+            mats_blur = np.concatenate((mats_blur, mat_msk), axis=2)
+
             fdist=np.concatenate((fdist,[self.focus_dist[req]]),axis=0)
         
         #append depth to the output
         mats_output = np.concatenate((mats_output, mat_dpt), axis=2)
         
-        sample = {'input': mats_input, 'output': mats_output}
+        sample = {'input': mats_input, 'output': mats_output,'blur':mats_blur}
 
         if self.transform_fnc:
             sample = self.transform_fnc(sample)
-        sample = {'input': sample['input'], 'output': sample['output'],'fdist':fdist}
+        sample = {'input': sample['input'], 'output': sample['output'],'blur':sample['blur'],'fdist':fdist}
         return sample
 
 
 class ToTensor(object):
     def __call__(self, sample):
-        mats_input, mats_output = sample['input'], sample['output']
+        mats_input, mats_output,mats_blur = sample['input'], sample['output'],sample['blur']
 
-        mats_input = mats_input.transpose((3,2, 0, 1))
-        mats_output = mats_output.transpose((2, 0, 1))
+        mats_input=mats_input.transpose((3,2, 0, 1))
+        mats_output=mats_output.transpose((2, 0, 1))
+        mats_blur=mats_blur.transpose((2, 0, 1))
         return {'input': torch.from_numpy(mats_input),
-                'output': torch.from_numpy(mats_output),}
-
+                'output': torch.from_numpy(mats_output),
+                'blur':torch.from_numpy(mats_blur)}
 
 def load_data(data_dir,aif,train_split,fstack,
               WORKERS_NUM, BATCH_SIZE, FOCUS_DIST, REQ_F_IDX, MAX_DPT):

@@ -1,14 +1,12 @@
 import argparse
 import cv2
-from models import LinDFF
+from models import LinDFF,DFFNet
 import os
 import time
 from models.submodule import *
 
 from torch.utils.data import DataLoader
 from dataloader import focalblender
-
-
 
 import  matplotlib
 matplotlib.use('TkAgg')
@@ -22,15 +20,16 @@ Main code for Ours-FV and Ours-DFV test on FoD500 dataset
 
 parser = argparse.ArgumentParser(description='DFVDFF')
 parser.add_argument('--data_path', default='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\',help='test data path')
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b2_lvl1\\best.tar', help='model path')
+parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinDFF\\best.tar', help='model path')
 parser.add_argument('--outdir', default='C:\\Users\\lahir\\results\\',help='output dir')
 
 parser.add_argument('--stack_num', type=int ,default=5, help='num of image in a stack, please take a number in [2, 10], change it according to the loaded checkpoint!')
 parser.add_argument('--use_diff', default=0, choices=[0,1], help='if use differential images as input, change it according to the loaded checkpoint!')
 
-parser.add_argument('--level', type=int, default=1, help='num of layers in network, please take a number in [1, 4]')
-parser.add_argument('--focusdist', nargs='+', default=[0.1, 0.15, 0.3, 0.7, 1.0, 1.5, 2.0, 3.0, 10.0, float('inf')],  help='focal distances included in the dataset')
-parser.add_argument('--focusdistreq', nargs='+', default=[0.1,.15,.3,0.7,1.5],  help='focal dists required for the model')
+parser.add_argument('--level', type=int, default=4, help='num of layers in network, please take a number in [1, 4]')
+parser.add_argument('--focusdist', nargs='+', default=[0.1,.15,.3,0.7,1.5,10000],  help='focal distances included in the dataset')
+parser.add_argument('--focusdistreq', nargs='+', default=[0,1,2,3,4,5],  help='focal dists required for the model')
+parser.add_argument('--model', default='LinDFF', help='save path')
 args = parser.parse_args()
 
 # !!! Only for users who download our pre-trained checkpoint, comment the next four line if you are not !!!
@@ -41,14 +40,16 @@ else:
     args.use_diff = 0
 '''
 
-# dataloader
-from dataloader import FoD500Loader
-
 # construct model
+if args.model == 'LinDFF':
+    model = LinDFF(clean=False,level=args.level, use_diff=args.use_diff)
+    model = nn.DataParallel(model)
+    model.cuda()
+elif args.model == 'DFFNet':
+    model = DFFNet(clean=False,level=args.level, use_diff=args.use_diff)
+    model = nn.DataParallel(model)
+    model.cuda()
 
-model = LinDFF(clean=False,level=args.level, use_diff=args.use_diff)
-model = nn.DataParallel(model)
-model.cuda()
 ckpt_name = os.path.basename(os.path.dirname(args.loadmodel))# we use the dirname to indicate training setting
 
 if args.loadmodel is not None:
@@ -69,11 +70,8 @@ def disp2depth(disp):
 def main(image_size = (256, 256)):
     model.eval()
 
-    focus_dist=args.focusdist
-    focus_dist_req=args.focusdistreq
-
     loaders, total_steps = focalblender.load_data(args.data_path,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
-        BATCH_SIZE=2,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
+        BATCH_SIZE=1,FOCUS_DIST=args.focusdist,REQ_F_IDX=args.focusdistreq,MAX_DPT=1.0)
     dataloader=loaders[1]
 
     # metric prepare
@@ -92,11 +90,50 @@ def main(image_size = (256, 256)):
             print('processing: {}/{}'.format(inx, test_num))
 
         img_stack = Variable(torch.FloatTensor(img_stack)).cuda()
+        gt_disp = Variable(torch.FloatTensor(gt_disp)).cuda()
 
         with torch.no_grad():
             torch.cuda.synchronize()
             start_time = time.time()
             pred_disp, std, focusMap = model(img_stack, (foc_dist))
+
+            # i,j=100,40
+            # pred_disp[0,i,j]
+            # gt_disp[0,0,i,j]
+            # f=focusMap[0,:,i,j].detach().cpu().numpy()
+            # s1=[0.1,.15,.3,0.7,1.5]
+            # plt.scatter(s1,f)
+
+            # #plot 45 and -45 lines
+            # x=np.linspace(0,2,100)
+            # for i in range(len(s1)):
+            #     #45
+            #     y=x+f[i]-s1[i]
+            #     plt.plot(x,y,'-r') 
+            #     #-45
+            #     y=-1*x+f[i]+s1[i]
+            #     plt.plot(x,y,'-g') 
+            # plt.ylim([0,1.5])
+            # plt.show()
+
+            # #plot gt
+            # gt=gt_disp.detach().cpu().squeeze(dim=0).squeeze(dim=0).numpy()
+            # plt.imshow(gt)
+            # plt.show()
+            
+            '''
+            mask = gt_disp > 0
+            mask.detach_()
+            with torch.no_grad():
+                pred_disp, _, _ = model(img_stack, foc_dist)
+                loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
+            '''
+            #pred_disp, std, focusMap = model(img_stack, foc_dist)
+            #import matplotlib.pyplot as plt
+            #plt.imshow(gt_disp.squeeze(dim=0).squeeze(dim=0).detach().cpu())
+            #plt.show()
+            #plt.imshow(pred_disp.squeeze(dim=0).squeeze(dim=0).detach().cpu())
+            #plt.show()
             torch.cuda.synchronize()
             ttime = (time.time() - start_time); print('time = %.2f' % (ttime*1000) )
             if not type(std)==int:
