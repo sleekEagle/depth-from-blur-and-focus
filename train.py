@@ -130,18 +130,17 @@ def train(img_stack_in,disp,blur,foc_dist):
     model.train()
     img_stack_in   = Variable(torch.FloatTensor(img_stack_in))
     gt_disp    = Variable(torch.FloatTensor(disp))
-    img_stack, gt_disp, blur,foc_dist = img_stack_in.cuda(),  gt_disp.cuda(), blur[:,0:-1,:,:].cuda(),foc_dist.cuda()
+    img_stack, gt_disp, blur,foc_dist = img_stack_in.cuda(),  gt_disp.cuda(), blur.cuda(),foc_dist.cuda()
 
     #---------
-    '''
     max_val = torch.where(foc_dist>=100, torch.zeros_like(foc_dist), foc_dist) # exclude padding value
     min_val = torch.where(foc_dist<=0, torch.ones_like(foc_dist)*10, foc_dist)  # exclude padding value
     mask = (gt_disp >= min_val.min(dim=1)[0].view(-1,1,1,1)) & (gt_disp <= max_val.max(dim=1)[0].view(-1,1,1,1)) #
     mask.detach_()
-    '''
-    mask = gt_disp > 0
-    mask.detach_()
-    blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1]-1,dim=1)
+
+    # mask = gt_disp > 0
+    # mask.detach_()
+    blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1],dim=1)
     #----
 
     optimizer.zero_grad()
@@ -160,7 +159,7 @@ def train(img_stack_in,disp,blur,foc_dist):
         distloss = distloss + args.lvl_w[i] * _cur_loss.mean()
         blurloss = blurloss + args.lvl_w[i] * _blur_loss.mean()
     torch.autograd.set_detect_anomaly(True)
-    loss=blurloss+distloss
+    loss=blurloss
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
     optimizer.step()
@@ -234,6 +233,10 @@ def main():
             gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
             foc_dist=sample_batch['fdist'].float()
             blur=sample_batch['blur'].float()
+
+            # #plot blur
+            # i,j=100,200
+            # blur[0][:,i,j]
 
             start_time = time.time()
             loss, vis = train(img_stack, gt_disp, blur,foc_dist)

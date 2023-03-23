@@ -93,7 +93,7 @@ class LinDFF(nn.Module):
             feat5 = torch.cat((feat6_2x, vol3), dim=1)
             feat5_2x, cost5 = self.decoder5(feat5)
 
-            feat4 = torch.cat((feat5_2x, vol2), dim=1)            
+            feat4 = torch.cat((feat5_2x, vol2), dim=1) 
             feat4_2x, cost4 = self.decoder4(feat4)
 
             feat3 = torch.cat((feat4_2x, vol1), dim=1)
@@ -105,33 +105,44 @@ class LinDFF(nn.Module):
             infblur6=torch.unsqueeze(cost6[:,-1,:,:],dim=1)
             infblur6=torch.repeat_interleave(infblur6,cost6.shape[1],dim=1)
             infblur6=torch.clamp(infblur6,min=self.clip)
-            cost6=cost6/infblur6
+            cost6_=cost6/infblur6
 
             # cost5=torch.add(cost5,1e-5)
             infblur5=torch.unsqueeze(cost5[:,-1,:,:],dim=1)
             infblur5=torch.repeat_interleave(infblur5,cost5.shape[1],dim=1)
             infblur5=torch.clamp(infblur5,min=self.clip)
-            cost5=cost5/infblur5
+            cost5_=cost5/infblur5
             
             # cost4=torch.add(cost4,1e-5)
             infblur4=torch.unsqueeze(cost4[:,-1,:,:],dim=1)
             infblur4=torch.repeat_interleave(infblur4,cost4.shape[1],dim=1)
             infblur4=torch.clamp(infblur4,min=self.clip)
-            cost4=cost4/infblur4
+            cost4_=cost4/infblur4
             
             # cost3=torch.add(cost3,1e-5)
             infblur3=torch.unsqueeze(cost3[:,-1,:,:],dim=1)
             infblur3=torch.repeat_interleave(infblur3,cost3.shape[1],dim=1)
             infblur3=torch.clamp(infblur3,min=self.clip)
-            cost3=cost3/infblur3
+            cost3_=cost3/infblur3
         
         #remove the infinity focused values
-        cost3=cost3[:,0:n-1,:,:]
-        cost4=cost4[:,0:n-1,:,:]
-        cost5=cost5[:,0:n-1,:,:]
-        cost6=cost6[:,0:n-1,:,:]
+        cost3_=cost3_[:,0:n-1,:,:]
+        cost4_=cost4_[:,0:n-1,:,:]
+        cost5_=cost5_[:,0:n-1,:,:]
+        cost6_=cost6_[:,0:n-1,:,:]
 
-        cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
+        #to supervise blur
+        
+        # cost=torch.rand(1,6,256,256)
+        # F.interpolate(cost, [10,10], mode='bilinear').shape
+
+        cost3=F.interpolate(cost3, [h, w], mode='bilinear')
+        if(self.training):
+            cost4=F.interpolate(cost4, [h, w], mode='bilinear')
+            cost5=F.interpolate(cost5, [h, w], mode='bilinear')
+            cost6=F.interpolate(cost6, [h, w], mode='bilinear')
+
+        cost3_ = F.interpolate(cost3_, [h, w], mode='bilinear')
         #pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
         #create s1
         s1=torch.unsqueeze(focal_dist,dim=2).unsqueeze(dim=3)
@@ -139,8 +150,8 @@ class LinDFF(nn.Module):
         s1=s1[:,0:n-1,:,:]
 
         #multiply blur with (s1-f)
-        cost3=cost3*(s1-self.f)
-        pred3=self.distreg(s1,cost3)
+        cost3_=cost3_*(s1-self.f)
+        pred3=self.distreg(s1,cost3_)
         #print('focal_dist:'+str(focal_dist.shape))
         #pred3, std3 = self.disp_reg(F.softmax(cost3, 1), focal_dist[:,0:-1], uncertainty=True)
         std3=0
@@ -151,28 +162,28 @@ class LinDFF(nn.Module):
         cost_stacked=[cost3]
         if self.training :
             if self.level >= 2:
-                cost4 = F.interpolate(cost4, [h, w], mode='bilinear')
+                cost4_ = F.interpolate(cost4_, [h, w], mode='bilinear')
                 #pred4, std4 = self.disp_reg(F.softmax(cost4, 1), focal_dist, uncertainty=True)
-                cost4=cost4*(s1-self.f)
-                pred4=self.distreg(s1,cost4)
+                cost4_=cost4_*(s1-self.f)
+                pred4=self.distreg(s1,cost4_)
                 std4=0
                 stacked.append(pred4)
                 stds.append(std4)
                 cost_stacked.append(cost4)
                 if self.level >=3 :
-                    cost5 = F.interpolate(cost5, [h, w], mode='bilinear')
-                    cost5=cost5*(s1-self.f)
-                    pred5=self.distreg(s1,cost5)
+                    cost5_ = F.interpolate(cost5_, [h, w], mode='bilinear')
+                    cost5_=cost5_*(s1-self.f)
+                    pred5=self.distreg(s1,cost5_)
                     std5=0
                     #pred5, std5 = self.disp_reg(F.softmax(cost5, 1), focal_dist, uncertainty=True)
                     stacked.append(pred5)
                     stds.append(std5)
                     cost_stacked.append(cost5)
                     if self.level >=4 :
-                        cost6 = F.interpolate(cost6, [h, w], mode='bilinear')
-                        cost6=cost6*(s1-self.f)
+                        cost6_ = F.interpolate(cost6_, [h, w], mode='bilinear')
+                        cost6_=cost6_*(s1-self.f)
                         #pred6, std6 = self.disp_reg(F.softmax(cost6, 1), focal_dist, uncertainty=True)
-                        pred6=self.distreg(s1,cost6)
+                        pred6=self.distreg(s1,cost6_)
                         std6=0
                         stacked.append(pred6)
                         stds.append(std6)

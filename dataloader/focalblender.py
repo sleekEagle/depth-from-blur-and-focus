@@ -26,11 +26,12 @@ def read_dpt(img_dpt_path):
 '''
 output |s2-s1|
 '''
-def get_blur(s1,s2):
-    blur=abs(s2-s1)
-    return blur
-
-
+def get_blur(s1,s2,f):
+    if(s1<50):
+        blur=abs(s2-s1)/s2*(s1-f)
+    else:
+        blur=1/s2
+    return blur/21.0
 
 '''
 All in-focus image is attached to the input matrix after the RGB image
@@ -94,6 +95,7 @@ class ImageDataset(torch.utils.data.Dataset):
         self.imglist_allif.sort()
 
         self.max_dpt = max_dpt
+        self.f=2.9e-3
 
     def __len__(self):
         return int(len(self.imglist_dpt))
@@ -135,7 +137,7 @@ class ImageDataset(torch.utils.data.Dataset):
             mat_all=np.expand_dims(mat_all,axis=-1)
             mats_input = np.concatenate((mats_input, mat_all), axis=3)
 
-            img_msk = get_blur(self.focus_dist[req], img_dpt)
+            img_msk = get_blur(self.focus_dist[req], img_dpt,self.f)
             img_msk = img_msk
             #img_msk = np.clip(img_msk, 0, 1.0e-4) / 1.0e-4
             mat_msk = img_msk.copy()[:, :, np.newaxis]
@@ -181,7 +183,7 @@ def load_data(data_dir,aif,train_split,fstack,
     dataset_valid = torch.utils.data.Subset(img_dataset, indices_valid)
 
     loader_train = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=WORKERS_NUM, batch_size=BATCH_SIZE, shuffle=True)
-    loader_valid = torch.utils.data.DataLoader(dataset=dataset_valid, num_workers=1, batch_size=1, shuffle=False)
+    loader_valid = torch.utils.data.DataLoader(dataset=dataset_valid, num_workers=1, batch_size=BATCH_SIZE, shuffle=False)
 
     total_steps = int(len(dataset_train) / BATCH_SIZE)
     print("Total number of steps per epoch:", total_steps)
@@ -209,7 +211,8 @@ def get_loader_stats(loader):
     for st_iter, sample_batch in enumerate(loader):
         # Setting up input and output data
         X = sample_batch['input'][:,0,:,:,:].float()
-        Y = sample_batch['output'].float()
+        Y = sample_batch['blur'].float()
+        D = sample_batch['output'].float()
 
         xmin_=torch.min(X).cpu().item()
         if(xmin_<xmin):
@@ -221,9 +224,10 @@ def get_loader_stats(loader):
         count+=1
     
         #blur (|s2-s1|/(s2*(s1-f)))
+        print(D.shape)
         gt_step1 = Y[:, :-1, :, :]
         #depth in m
-        gt_step2 = Y[:, -1:, :, :]
+        gt_step2 = D[:, -1:, :, :]
         
         depthmin_=torch.min(gt_step2).cpu().item()
         if(depthmin_<depthmin):

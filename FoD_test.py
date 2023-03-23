@@ -97,11 +97,11 @@ def main(image_size = (256, 256)):
             start_time = time.time()
             pred_disp, std, focusMap = model(img_stack, (foc_dist))
 
-            # i,j=100,40
+            # i,j=24,20
             # pred_disp[0,i,j]
             # gt_disp[0,0,i,j]
             # f=focusMap[0,:,i,j].detach().cpu().numpy()
-            # s1=[0.1,.15,.3,0.7,1.5]
+            # s1=foc_dist[0,0:-1].detach().cpu().numpy()
             # plt.scatter(s1,f)
 
             # #plot 45 and -45 lines
@@ -113,7 +113,7 @@ def main(image_size = (256, 256)):
             #     #-45
             #     y=-1*x+f[i]+s1[i]
             #     plt.plot(x,y,'-g') 
-            # plt.ylim([0,1.5])
+            # plt.ylim([0,3.5])
             # plt.show()
 
             # #plot gt
