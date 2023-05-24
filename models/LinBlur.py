@@ -6,16 +6,20 @@ from .submodule import *
 import pdb
 from models.featExactor2 import FeatExactor
 
-a=torch.ones(10,12,6,8,8)
-a[:,:,0,:,:]*=0
-a[:,:,1,:,:]*=1
-a[:,:,2,:,:]*=2
-a[:,:,3,:,:]*=3
-a[:,:,4,:,:]*=4
-a[:,:,5,:,:]*=5
+# a=torch.ones(10,12,6,8,8)
+# a[:,:,0,:,:]*=0
+# a[:,:,1,:,:]*=1
+# a[:,:,2,:,:]*=2
+# a[:,:,3,:,:]*=3
+# a[:,:,4,:,:]*=4
+# a[:,:,5,:,:]*=5
 
-
-a[:,:,:-1]  a[:,:,1:]
+# inf=a[:,:,-1]
+# inf_=torch.unsqueeze(inf,dim=2)
+# inf=torch.repeat_interleave(inf_,repeats=a.shape[2],dim=2)
+# val=a/inf
+# val=val[:,:,:-1,:,:]
+# cat=torch.cat((val,inf_),dim=2)
 
 # Ours-FV (use_diff=0) and Ours-DFV (use_diff=1) model
 
@@ -51,9 +55,13 @@ class LinBlur(nn.Module):
 
     #divide feature sets 
     def div_feat_volume(self, vol):
-        vol_out = vol[:,:,:-1]/vol[:,:,1:]
-        vol_out = vol[:,:, :-1] - vol[:, :, 1:]
-        return torch.cat([vol_out, vol[:,:, -1:]], dim=2) # last elem is  vol[:,:, -1] - 0
+        inf=vol[:,:,-1]
+        inf_=torch.unsqueeze(inf,dim=2)
+        inf=torch.repeat_interleave(inf_,repeats=vol.shape[2],dim=2)
+        val=vol/inf
+        val=val[:,:,:-1,:,:]
+        cat=torch.cat((val,inf_),dim=2)
+        return cat
 
     def forward(self, stack, focal_dist):
         b, n, c, h, w = stack.shape
@@ -69,11 +77,17 @@ class LinBlur(nn.Module):
                                  conv2.reshape(b, n, -1, h//8, w//8).permute(0, 2, 1, 3, 4),\
                                  conv1.reshape(b, n, -1, h//4, w//4).permute(0, 2, 1, 3, 4)
 
-        print('before diff _vol4:'+str(_vol4.shape))
-        if self.use_diff == 1:
+        print('before div _vol4:'+str(_vol4.shape))
+        if self.use_div == 1:
             vol4, vol3, vol2, vol1 = self.div_feat_volume(_vol4), self.div_feat_volume(_vol3),\
                                      self.div_feat_volume(_vol2), self.div_feat_volume(_vol1)
             print('vol4:'+str(vol4.shape))
+            print('vol4 0:'+str(vol4[:,:,0,0,0]))
+            print('vol4 1:'+str(vol4[:,:,1,0,0]))
+            print('vol4 2:'+str(vol4[:,:,2,0,0]))
+            print('vol4 3:'+str(vol4[:,:,3,0,0]))
+            print('vol4 4:'+str(vol4[:,:,4,0,0]))
+            print('vol4 5:'+str(vol4[:,:,5,0,0]))
         else:
             vol4, vol3, vol2, vol1 =  _vol4, _vol3, _vol2, _vol1
             print('vol4:'+str(vol4.shape))

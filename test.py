@@ -7,7 +7,7 @@ import torch.utils.data
 from torch.autograd import Variable
 import torch.nn.functional as F
  
-model = LinBlur(clean=False,level=4, use_diff=1)
+model = LinBlur(clean=False,level=4, use_div=1)
 model = nn.DataParallel(model)
 model.cuda()
 

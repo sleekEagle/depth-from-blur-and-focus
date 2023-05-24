@@ -58,7 +58,7 @@ class DFFNet(nn.Module):
                                  conv1.reshape(b, n, -1, h//4, w//4).permute(0, 2, 1, 3, 4)
 
         print('before diff _vol4:'+str(_vol4.shape))
-        if self.use_diff == 1:
+        if self.use_div == 1:
             vol4, vol3, vol2, vol1 = self.diff_feat_volume1(_vol4), self.diff_feat_volume1(_vol3),\
                                      self.diff_feat_volume1(_vol2), self.diff_feat_volume1(_vol1)
             print('vol4:'+str(vol4.shape))
