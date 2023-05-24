@@ -1,6 +1,6 @@
 import argparse
 import cv2
-from models import LinDFF,DFFNet
+from models import LinDFF1,DFFNet,LinDFF
 import os
 import time
 from models.submodule import *
@@ -20,7 +20,7 @@ Main code for Ours-FV and Ours-DFV test on FoD500 dataset
 
 parser = argparse.ArgumentParser(description='DFVDFF')
 parser.add_argument('--data_path', default='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\',help='test data path')
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinDFF\\best.tar', help='model path')
+parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\models\\DFV\\best.tar', help='model path')
 parser.add_argument('--outdir', default='C:\\Users\\lahir\\results\\',help='output dir')
 
 parser.add_argument('--stack_num', type=int ,default=5, help='num of image in a stack, please take a number in [2, 10], change it according to the loaded checkpoint!')
@@ -43,6 +43,10 @@ else:
 # construct model
 if args.model == 'LinDFF':
     model = LinDFF(clean=False,level=args.level, use_diff=args.use_diff)
+    model = nn.DataParallel(model)
+    model.cuda()
+if args.model == 'LinDFF1':
+    model = LinDFF1(clean=False,level=args.level, use_diff=args.use_diff)
     model = nn.DataParallel(model)
     model.cuda()
 elif args.model == 'DFFNet':
@@ -97,12 +101,26 @@ def main(image_size = (256, 256)):
             start_time = time.time()
             pred_disp, std, focusMap = model(img_stack, (foc_dist))
 
-            # i,j=24,20
+            # i,j=30,10
             # pred_disp[0,i,j]
             # gt_disp[0,0,i,j]
             # f=focusMap[0,:,i,j].detach().cpu().numpy()
+            # mul=mul3[0,:,i,j].detach().cpu().numpy()
             # s1=foc_dist[0,0:-1].detach().cpu().numpy()
-            # plt.scatter(s1,f)
+            # s1=s1.tolist()
+            # plt.plot(s1,f,'bo')
+            # plt.plot(s1,mul,'ro')
+            # plt.show()
+
+            # blur=sample_batch['blur'].float()
+            # b=blur[0,:,i,j]
+            # b=np.abs(s1-0.5176)
+            # plt.plot(s1,b,'ro')
+            # plt.ylim([0,1])
+            # plt.show()
+            # b=(b/b[-1])[:-1]*(s1-2.9e-3)
+            # plt.plot(s1,b,'bo')
+
 
             # #plot 45 and -45 lines
             # x=np.linspace(0,2,100)

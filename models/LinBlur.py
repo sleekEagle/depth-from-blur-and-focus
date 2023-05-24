@@ -6,19 +6,30 @@ from .submodule import *
 import pdb
 from models.featExactor2 import FeatExactor
 
+a=torch.ones(10,12,6,8,8)
+a[:,:,0,:,:]*=0
+a[:,:,1,:,:]*=1
+a[:,:,2,:,:]*=2
+a[:,:,3,:,:]*=3
+a[:,:,4,:,:]*=4
+a[:,:,5,:,:]*=5
+
+
+a[:,:,:-1]  a[:,:,1:]
+
 # Ours-FV (use_diff=0) and Ours-DFV (use_diff=1) model
 
-class DFFNet(nn.Module):
-    def __init__(self, clean,level=1, use_diff=1):
-        super(DFFNet, self).__init__()
+class LinBlur(nn.Module):
+    def __init__(self, clean,level=1, use_div=1):
+        super(LinBlur, self).__init__()
 
         self.clean = clean
         self.feature_extraction = FeatExactor()
         self.level = level
 
-        self.use_diff = use_diff
+        self.use_div = use_div
         assert level >= 1 and level <= 4
-        assert use_diff == 0 or use_diff == 1
+        assert use_div == 0 or use_div == 1
 
         if level == 1:
             self.decoder3 = decoderBlock(2,16,16, stride=(1,1,1),up=False, nstride=1)
@@ -38,8 +49,9 @@ class DFFNet(nn.Module):
         # reg
         self.disp_reg = disparityregression(1)
 
-
-    def diff_feat_volume1(self, vol):
+    #divide feature sets 
+    def div_feat_volume(self, vol):
+        vol_out = vol[:,:,:-1]/vol[:,:,1:]
         vol_out = vol[:,:, :-1] - vol[:, :, 1:]
         return torch.cat([vol_out, vol[:,:, -1:]], dim=2) # last elem is  vol[:,:, -1] - 0
 
@@ -59,8 +71,8 @@ class DFFNet(nn.Module):
 
         print('before diff _vol4:'+str(_vol4.shape))
         if self.use_diff == 1:
-            vol4, vol3, vol2, vol1 = self.diff_feat_volume1(_vol4), self.diff_feat_volume1(_vol3),\
-                                     self.diff_feat_volume1(_vol2), self.diff_feat_volume1(_vol1)
+            vol4, vol3, vol2, vol1 = self.div_feat_volume(_vol4), self.div_feat_volume(_vol3),\
+                                     self.div_feat_volume(_vol2), self.div_feat_volume(_vol1)
             print('vol4:'+str(vol4.shape))
         else:
             vol4, vol3, vol2, vol1 =  _vol4, _vol3, _vol2, _vol1

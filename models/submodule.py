@@ -31,6 +31,28 @@ class sepConv3dBlock(nn.Module):
             x = self.downsample(x)
         out = F.relu(x + self.conv2(out),inplace=True)
         return out
+    
+class sepConv2dBlock(nn.Module):
+    '''
+    Separable 3d convolution block as 2 separable convolutions and a projection
+    layer
+    '''
+    def __init__(self, in_planes, out_planes, stride=(1,1,1)):
+        super(sepConv2dBlock, self).__init__()
+        if in_planes == out_planes and stride==(1,1,1):
+            self.downsample = None
+        else:
+            self.downsample = projfeat3d(in_planes, out_planes,stride)
+        self.conv1 = sepConv3d(in_planes, out_planes, 3, stride, 1)
+        self.conv2 = sepConv3d(out_planes, out_planes, 3, (1,1,1), 1)
+
+
+    def forward(self,x):
+        out = F.relu(self.conv1(x),inplace=True)
+        if self.downsample:
+            x = self.downsample(x)
+        out = F.relu(x + self.conv2(out),inplace=True)
+        return out
 
 
 
@@ -51,6 +73,11 @@ class projfeat3d(nn.Module):
         x = self.bn(x)
         x = x.view(b,-1,d//self.stride[0],h,w)
         return x
+    
+# model=projfeat3d(10,10,stride=(1,1,1))
+# img=torch.rand(10,10,50,50)
+# model(img)
+
 
 # original conv3d block
 def sepConv3d(in_planes, out_planes, kernel_size, stride, pad,bias=False):
@@ -59,6 +86,13 @@ def sepConv3d(in_planes, out_planes, kernel_size, stride, pad,bias=False):
     else:
         return nn.Sequential(nn.Conv3d(in_planes, out_planes, kernel_size=kernel_size, padding=pad, stride=stride,bias=bias),
                          nn.BatchNorm3d(out_planes))
+    
+def sepConv2d(in_planes, out_planes, kernel_size, stride, pad,bias=False):
+    if bias:
+        return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, padding=pad, stride=stride,bias=bias))
+    else:
+        return nn.Sequential(nn.Conv2d(in_planes, out_planes, kernel_size=kernel_size, padding=pad, stride=stride,bias=bias),
+                         nn.BatchNorm2d(out_planes))
 
 
 
@@ -182,3 +216,74 @@ class decoderBlock(nn.Module):
                 costl = self.classify(fvl)
 
         return fvl,costl.squeeze(1)
+    
+
+class decoderBlock2D(nn.Module):
+    def __init__(self, nconvs, inchannelF,channelF,stride=(1,1,1),up=False, nstride=1,pool=False):
+        super(decoderBlock, self).__init__()
+        self.pool=pool
+        stride = [stride]*nstride + [(1,1,1)] * (nconvs-nstride)
+        self.convs = [sepConv3dBlock(inchannelF,channelF,stride=stride[0])]
+        for i in range(1,nconvs):
+            self.convs.append(sepConv3dBlock(channelF,channelF, stride=stride[i]))
+        self.convs = nn.Sequential(*self.convs)
+
+        self.classify = nn.Sequential(sepConv3d(channelF, channelF, 3, (1,1,1), 1),
+                                       nn.ReLU(inplace=True),
+                                       sepConv3d(channelF, 1, 3, (1,1,1),1,bias=True),
+                                       nn.ReLU(inplace=True))
+
+        self.up = False
+        if up:
+            self.up = True
+            self.up = nn.Sequential(nn.Upsample(scale_factor=(1,2,2),mode='trilinear'),
+                                 sepConv3d(channelF, channelF//2, 3, (1,1,1),1,bias=False),
+                                 nn.ReLU(inplace=True))
+
+        if pool:
+            self.pool_convs = torch.nn.ModuleList([sepConv3d(channelF, channelF, 1, (1,1,1), 0),
+                               sepConv3d(channelF, channelF, 1, (1,1,1), 0),
+                               sepConv3d(channelF, channelF, 1, (1,1,1), 0),
+                               sepConv3d(channelF, channelF, 1, (1,1,1), 0)])
+            
+ 
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d):
+                n = m.kernel_size[0] * m.kernel_size[1]*m.kernel_size[2] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+                if hasattr(m.bias,'data'):
+                    m.bias.data.zero_()
+
+
+    def forward(self,fvl):
+        # left
+        fvl = self.convs(fvl)
+        # pooling
+        if self.pool:
+            fvl_out = fvl
+            _,_,d,h,w=fvl.shape
+            for i,pool_size in enumerate(np.linspace(1,min(d,h,w)//2,4,dtype=int)):
+                kernel_size = (int(d/pool_size), int(h/pool_size), int(w/pool_size))
+                out = F.avg_pool3d(fvl, kernel_size, stride=kernel_size)       
+                out = self.pool_convs[i](out)
+                out = F.upsample(out, size=(d,h,w), mode='trilinear')
+                fvl_out = fvl_out + 0.25*out
+            fvl = F.relu(fvl_out/2.,inplace=True)
+
+
+        if self.training:
+            # classification
+            costl = self.classify(fvl)
+            if self.up:
+                fvl = self.up(fvl)
+        else:
+            # classification
+            if self.up:
+                fvl = self.up(fvl)
+                costl=fvl
+            else:
+                costl = self.classify(fvl)
+
+        return fvl,costl.squeeze(1)
+

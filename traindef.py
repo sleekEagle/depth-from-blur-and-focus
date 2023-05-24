@@ -10,7 +10,7 @@ import torch.utils.data
 from torch.autograd import Variable
 import torch.nn.functional as F
 import time
-from models import LinDFF,LinDFF1,DFFNet,LinDef
+from models import LinDFF,DFFNet,LinDef
 from utils import logger, write_log
 torch.backends.cudnn.benchmark=True
 from glob import glob
@@ -34,12 +34,12 @@ parser.add_argument('--lvl_w', nargs='+', default=[8./15, 4./15, 2./15, 1./15], 
 
 parser.add_argument('--lr', type=float, default=0.0001,  help='learning rate')
 parser.add_argument('--epochs', type=int, default=700, help='number of epochs to train')
-parser.add_argument('--batchsize', type=int, default=12, help='samples per batch')
-parser.add_argument('--model', default='DFFNet', help='save path')
+parser.add_argument('--batchsize', type=int, default=2, help='samples per batch')
+parser.add_argument('--model', default='LinDFF', help='save path')
 
 
 # ====== log path ==========
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinDFF1\\best.tar',   help='path to pre-trained checkpoint if any')
+parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinDFF\\best.tar',   help='path to pre-trained checkpoint if any')
 parser.add_argument('--savemodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
@@ -59,16 +59,12 @@ if args.model == 'LinDFF':
     model = LinDFF(clean=False,level=args.level, use_diff=args.use_diff)
     model = nn.DataParallel(model)
     model.cuda()
-if args.model == 'LinDFF1':
-    model = LinDFF1(clean=False,level=args.level, use_diff=args.use_diff)
-    model = nn.DataParallel(model)
-    model.cuda()
 elif args.model == 'DFFNet':
     model = DFFNet(clean=False,level=args.level, use_diff=args.use_diff)
     model = nn.DataParallel(model)
     model.cuda()
 elif args.model == 'LinDef':
-    model = LinDef(3,1, 16, flag_step2=False)
+    model = LinDef(6,1, 16, flag_step2=False)
     model = nn.DataParallel(model)
     model.cuda()
 
@@ -149,25 +145,32 @@ def train(img_stack_in,disp,blur,foc_dist):
     mask = gt_disp > 0
     mask.detach_()
     blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1]-1,dim=1)
+    blur_mask=blur_mask.reshape(10,256,256)
     #----
 
     optimizer.zero_grad()
     beta_scale = 1 # smooth l1 do not have beta in 1.6, so we increase the input to and then scale back -- no significant improve according to our trials
-    stacked, stds, cost_stacked = model(img_stack, foc_dist)
+    # stacked, stds, cost_stacked = model(img_stack, foc_dist)
+    blur_pred=model(img_stack,k=1)
+    blur_pred=blur_pred.squeeze(dim=1)
+    blur=blur.reshape(10,256,256)
+    _blur_loss = F.smooth_l1_loss(blur_pred[blur_mask] * 1, blur[blur_mask]* 1, reduction='none').mean()
 
     distloss = 0
     blurloss=0
-    for i, (pred, std,cost) in enumerate(zip(stacked, stds,cost_stacked)):
-        if args.model == 'LinDFF1' or args.model == 'LinDFF':
+    for i, (blur_pred) in enumerate(zip(blur_stacked)):
+        # blur_pred=blur_pred[0]
+        if args.model == 'LinDFF':
             pred_=torch.unsqueeze(pred,dim=1)
         elif args.model == 'DFFNet':
             pred_=pred
-        _cur_loss = F.smooth_l1_loss(pred_[mask] * beta_scale, gt_disp[mask]* beta_scale, reduction='none') / beta_scale
-        _blur_loss = F.smooth_l1_loss(cost[blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none')
+
+        # _cur_loss = F.smooth_l1_loss(pred_[mask] * beta_scale, gt_disp[mask]* beta_scale, reduction='none') / beta_scale
+        _blur_loss = F.smooth_l1_loss(blur_pred[blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none')
         distloss = distloss + args.lvl_w[i] * _cur_loss.mean()
         blurloss = blurloss + args.lvl_w[i] * _blur_loss.mean()
-    torch.autograd.set_detect_anomaly(True) 
-    loss=blurloss
+    torch.autograd.set_detect_anomaly(True)
+    loss=distloss
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
     optimizer.step()
@@ -193,7 +196,7 @@ def valid(img_stack_in,disp, foc_dist):
     #----
     with torch.no_grad():
         pred_disp, _, _ = model(img_stack, foc_dist)
-        if args.model == 'LinDFF' or args.model == 'LinDFF1':
+        if args.model == 'LinDFF':
             pred_disp=torch.unsqueeze(pred_disp,dim=1)
         loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
 
@@ -241,7 +244,16 @@ def main():
             gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
             foc_dist=sample_batch['fdist'].float()
             blur=sample_batch['blur'].float()
-
+            b,n,c,h,w=img_stack.shape
+            inf_blur=img_stack[:,-1,:,:,:].unsqueeze(dim=1)
+            img=torch.empty([b,0,c*2,h,w])
+            for i in range(n-1):
+                img_=img_stack[:,i,:,:,:].unsqueeze(dim=1)
+                cat_=torch.cat((img_,inf_blur),dim=2)
+                img=torch.cat((img,cat_),dim=1)
+            img=img.reshape(b*(n-1),6,h,w)
+            break
+            out= model(img,k=1)
             #plot blur
             # import matplotlib.pyplot as plt
             # i,j=44,23
@@ -256,7 +268,7 @@ def main():
             # plt.show()
 
             start_time = time.time()
-            loss, vis = train(img_stack, gt_disp, blur,foc_dist)
+            loss, vis = train(img, gt_disp, blur,foc_dist)
 
             if total_iters %10 == 0:
                 torch.cuda.synchronize()
@@ -286,7 +298,7 @@ def main():
             os.remove(list_ckpt[0])
 
         # Vaild
-        if epoch % 10 == 0:
+        if epoch % 5 == 0:
             total_val_loss = 0
 
             for batch_idx, sample_batch in enumerate(loaders[1]):

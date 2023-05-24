@@ -28,10 +28,19 @@ output |s2-s1|
 '''
 def get_blur(s1,s2,f):
     if(s1<50):
-        blur=abs(s2-s1)/s2*(s1-f)
+        blur=abs(s2-s1)
     else:
         blur=1/s2
-    return blur/21.0
+    return blur
+
+# s1=[0.1,0.15,0.3,0.7,1.5]
+# s2=[0.1,0.15,0.3,0.7,1.5,1.83]
+# f=2.9e-3
+# b=[]
+# for s1_ in s1:
+#     for s2_ in s2:
+#         b.append(abs(s2_-s1_)/(s1_-f))
+# min(b),max(b)
 
 '''
 All in-focus image is attached to the input matrix after the RGB image
@@ -195,10 +204,10 @@ def load_data(data_dir,aif,train_split,fstack,
 
 datapath='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\'
 datapath='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\focal_data\\'
-blurclip=1
-def get_data_stats(datapath,blurclip):
-    loaders, total_steps = load_data(datapath,blur=1,aif=0,train_split=0.8,fstack=0,WORKERS_NUM=0,
-        BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4],MAX_DPT=1.0,blurclip=blurclip)
+
+def get_data_stats(datapath):
+    loaders, total_steps = load_data(datapath,aif=0,train_split=0.8,fstack=1,WORKERS_NUM=0,
+        BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4],MAX_DPT=1.0)
     print('stats of train data')
     get_loader_stats(loaders[0])
     print('______')
@@ -224,11 +233,10 @@ def get_loader_stats(loader):
         count+=1
     
         #blur (|s2-s1|/(s2*(s1-f)))
-        print(D.shape)
         gt_step1 = Y[:, :-1, :, :]
         #depth in m
         gt_step2 = D[:, -1:, :, :]
-        
+
         depthmin_=torch.min(gt_step2).cpu().item()
         if(depthmin_<depthmin):
             depthmin=depthmin_

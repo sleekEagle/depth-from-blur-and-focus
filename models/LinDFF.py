@@ -99,6 +99,12 @@ class LinDFF(nn.Module):
             feat3 = torch.cat((feat4_2x, vol1), dim=1)
             _, cost3 = self.decoder3(feat3)
 
+            cost3=F.interpolate(cost3, [h, w], mode='bilinear')
+            if(self.training):
+                cost4=F.interpolate(cost4, [h, w], mode='bilinear')
+                cost5=F.interpolate(cost5, [h, w], mode='bilinear')
+                cost6=F.interpolate(cost6, [h, w], mode='bilinear')
+
             #divide cost (estimated blur) with blur when focused at infinity (i.e. last image of the focal stack) 
             #cost6=torch.add(cost6,1e-5)
             #print('cost6:'+str(cost6.shape))
@@ -124,6 +130,7 @@ class LinDFF(nn.Module):
             infblur3=torch.repeat_interleave(infblur3,cost3.shape[1],dim=1)
             infblur3=torch.clamp(infblur3,min=self.clip)
             cost3_=cost3/infblur3
+
         
         #remove the infinity focused values
         cost3_=cost3_[:,0:n-1,:,:]
@@ -131,18 +138,15 @@ class LinDFF(nn.Module):
         cost5_=cost5_[:,0:n-1,:,:]
         cost6_=cost6_[:,0:n-1,:,:]
 
+
         #to supervise blur
         
         # cost=torch.rand(1,6,256,256)
         # F.interpolate(cost, [10,10], mode='bilinear').shape
 
-        cost3=F.interpolate(cost3, [h, w], mode='bilinear')
-        if(self.training):
-            cost4=F.interpolate(cost4, [h, w], mode='bilinear')
-            cost5=F.interpolate(cost5, [h, w], mode='bilinear')
-            cost6=F.interpolate(cost6, [h, w], mode='bilinear')
+        
 
-        cost3_ = F.interpolate(cost3_, [h, w], mode='bilinear')
+        # cost3_ = F.interpolate(cost3_, [h, w], mode='bilinear')
         #pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
         #create s1
         s1=torch.unsqueeze(focal_dist,dim=2).unsqueeze(dim=3)
@@ -159,38 +163,38 @@ class LinDFF(nn.Module):
         # different output based on level
         stacked = [pred3]
         stds = [std3]
-        cost_stacked=[cost3]
+        cost_stacked=[cost3_]
         if self.training :
             if self.level >= 2:
-                cost4_ = F.interpolate(cost4_, [h, w], mode='bilinear')
+                # cost4_ = F.interpolate(cost4_, [h, w], mode='bilinear')
                 #pred4, std4 = self.disp_reg(F.softmax(cost4, 1), focal_dist, uncertainty=True)
                 cost4_=cost4_*(s1-self.f)
                 pred4=self.distreg(s1,cost4_)
                 std4=0
                 stacked.append(pred4)
                 stds.append(std4)
-                cost_stacked.append(cost4)
+                cost_stacked.append(cost4_)
                 if self.level >=3 :
-                    cost5_ = F.interpolate(cost5_, [h, w], mode='bilinear')
+                    # cost5_ = F.interpolate(cost5_, [h, w], mode='bilinear')
                     cost5_=cost5_*(s1-self.f)
                     pred5=self.distreg(s1,cost5_)
                     std5=0
                     #pred5, std5 = self.disp_reg(F.softmax(cost5, 1), focal_dist, uncertainty=True)
                     stacked.append(pred5)
                     stds.append(std5)
-                    cost_stacked.append(cost5)
+                    cost_stacked.append(cost5_)
                     if self.level >=4 :
-                        cost6_ = F.interpolate(cost6_, [h, w], mode='bilinear')
+                        # cost6_ = F.interpolate(cost6_, [h, w], mode='bilinear')
                         cost6_=cost6_*(s1-self.f)
                         #pred6, std6 = self.disp_reg(F.softmax(cost6, 1), focal_dist, uncertainty=True)
                         pred6=self.distreg(s1,cost6_)
                         std6=0
                         stacked.append(pred6)
                         stds.append(std6)
-                        cost_stacked.append(cost6)
+                        cost_stacked.append(cost6_)
             return stacked, stds, cost_stacked
         else:
-            return pred3,std3,cost3
+            return pred3,std3,cost3_
         
 '''
 model = LinDFF(clean=False,level=4, use_diff=0)
