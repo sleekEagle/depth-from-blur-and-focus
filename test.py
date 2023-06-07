@@ -28,4 +28,7 @@ model.train()
 img_stack_in   = Variable(torch.FloatTensor(img_stack))
 gt_disp    = Variable(torch.FloatTensor(gt_disp))
 img_stack, gt_disp, blur,foc_dist = img_stack_in.cuda(),  gt_disp.cuda(), blur[:,0:-1,:,:].cuda(),foc_dist.cuda()
-stacked, stds, cost_stacked = model(img_stack, foc_dist)
+cost3 = model(img_stack, foc_dist)
+
+#train only the first 5 features for blur_i/blur_inf
+

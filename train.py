@@ -35,11 +35,11 @@ parser.add_argument('--lvl_w', nargs='+', default=[8./15, 4./15, 2./15, 1./15], 
 parser.add_argument('--lr', type=float, default=0.0001,  help='learning rate')
 parser.add_argument('--epochs', type=int, default=700, help='number of epochs to train')
 parser.add_argument('--batchsize', type=int, default=12, help='samples per batch')
-parser.add_argument('--model', default='DFFNet', help='save path')
+parser.add_argument('--model', default='LinBlur', help='save path')
 
 
 # ====== log path ==========
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinDFF1\\best.tar',   help='path to pre-trained checkpoint if any')
+parser.add_argument('--loadmodel', default=None,   help='path to pre-trained checkpoint if any')
 parser.add_argument('--savemodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
@@ -68,6 +68,10 @@ elif args.model == 'DFFNet':
     model = nn.DataParallel(model)
     model.cuda()
 elif args.model == 'LinDef':
+    model = LinDef(3,1, 16, flag_step2=False)
+    model = nn.DataParallel(model)
+    model.cuda()
+elif args.model == 'LinBlur':
     model = LinDef(3,1, 16, flag_step2=False)
     model = nn.DataParallel(model)
     model.cuda()
@@ -133,6 +137,28 @@ if 'blender' in args.dataset:
     loaders, total_steps = focalblender.load_data(blenderpath,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
         BATCH_SIZE=args.batchsize,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
     
+
+# for testing. delete later
+for batch_idx, sample_batch in enumerate(loaders[0]):
+    img_stack_in=sample_batch['input'].float()
+    disp=sample_batch['output'][:,-1,:,:]
+    disp=torch.unsqueeze(disp,dim=1).float()
+    foc_dist=sample_batch['fdist'].float()
+    blur=sample_batch['blur'].float()
+    break
+
+model.train()
+img_stack_in   = Variable(torch.FloatTensor(img_stack_in))
+gt_disp    = Variable(torch.FloatTensor(disp))
+img_stack, gt_disp, blur,foc_dist = img_stack_in.cuda(),  gt_disp.cuda(), blur[:,0:-1,:,:].cuda(),foc_dist.cuda()
+
+mask = gt_disp > 0
+mask.detach_()
+blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1]-1,dim=1)
+
+stacked, stds, cost_stacked = model(img_stack, foc_dist)
+print('ended testing')
+
 # =========== Train func. =========
 def train(img_stack_in,disp,blur,foc_dist):
     model.train()
@@ -324,5 +350,5 @@ def main():
         torch.cuda.empty_cache()
 
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()

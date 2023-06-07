@@ -114,27 +114,29 @@ class LinBlur(nn.Module):
             _, cost3 = self.decoder3(feat3)
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
-        pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
+        return cost3
+        
+        # pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
 
         # different output based on level
-        stacked = [pred3]
-        stds = [std3]
-        if self.training :
-            if self.level >= 2:
-                cost4 = F.interpolate(cost4, [h, w], mode='bilinear')
-                pred4, std4 = self.disp_reg(F.softmax(cost4, 1), focal_dist, uncertainty=True)
-                stacked.append(pred4)
-                stds.append(std4)
-                if self.level >=3 :
-                    cost5 = F.interpolate((cost5).unsqueeze(1), [focal_dist.shape[1], h, w], mode='trilinear').squeeze(1)
-                    pred5, std5 = self.disp_reg(F.softmax(cost5, 1), focal_dist, uncertainty=True)
-                    stacked.append(pred5)
-                    stds.append(std5)
-                    if self.level >=4 :
-                        cost6 = F.interpolate((cost6).unsqueeze(1), [focal_dist.shape[1], h, w], mode='trilinear').squeeze(1)
-                        pred6, std6 = self.disp_reg(F.softmax(cost6, 1), focal_dist, uncertainty=True)
-                        stacked.append(pred6)
-                        stds.append(std6)
-            return stacked, stds, None
-        else:
-            return pred3,torch.squeeze(std3), F.softmax(cost3,1).squeeze()
+        # stacked = [pred3]
+        # stds = [std3]
+        # if self.training :
+        #     if self.level >= 2:
+        #         cost4 = F.interpolate(cost4, [h, w], mode='bilinear')
+        #         pred4, std4 = self.disp_reg(F.softmax(cost4, 1), focal_dist, uncertainty=True)
+        #         stacked.append(pred4)
+        #         stds.append(std4)
+        #         if self.level >=3 :
+        #             cost5 = F.interpolate((cost5).unsqueeze(1), [focal_dist.shape[1], h, w], mode='trilinear').squeeze(1)
+        #             pred5, std5 = self.disp_reg(F.softmax(cost5, 1), focal_dist, uncertainty=True)
+        #             stacked.append(pred5)
+        #             stds.append(std5)
+        #             if self.level >=4 :
+        #                 cost6 = F.interpolate((cost6).unsqueeze(1), [focal_dist.shape[1], h, w], mode='trilinear').squeeze(1)
+        #                 pred6, std6 = self.disp_reg(F.softmax(cost6, 1), focal_dist, uncertainty=True)
+        #                 stacked.append(pred6)
+        #                 stds.append(std6)
+        #     return stacked, stds, None
+        # else:
+        #     return pred3,torch.squeeze(std3), F.softmax(cost3,1).squeeze()
