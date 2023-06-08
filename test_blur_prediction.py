@@ -1,6 +1,7 @@
 from __future__ import print_function
 import argparse
 import os
+from os.path import join
 import random
 import torch
 import torch.nn as nn
@@ -39,7 +40,7 @@ parser.add_argument('--model', default='LinBlur', help='save path')
 
 
 # ====== log path ==========
-parser.add_argument('--loadmodel', default=None,   help='path to pre-trained checkpoint if any')
+parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinBlur\\model_20.tar',   help='path to pre-trained checkpoint if any')
 parser.add_argument('--savemodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
@@ -135,14 +136,49 @@ if 'blender' in args.dataset:
     from dataloader import focalblender
     blenderpath='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\'
     loaders, total_steps = focalblender.load_data(blenderpath,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
-        BATCH_SIZE=args.batchsize,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
+        BATCH_SIZE=args.batchsize,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
+    
+
+def save_blurpred(img,blur,depth,s1,n,savepath):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    fdist=s1.numpy()[0,:]
+    cost3=model(img,s1)
+    for idx in range(n):
+        i,j=(np.random.random(size=2)*depth.shape[-1]).tolist()
+        i,j=int(i),int(j)
+        b_pred=cost3[0,:-1,i,j].cpu().detach().numpy()
+        b_pred_=b_pred*(fdist-2.9e-3)
+        #get GT blur
+        b=blur[0,:,i,j].numpy()*(fdist-2.9e-3)
+        d=depth[0,0,i,j].numpy().item()
+
+        fig = plt.figure()
+        ax = plt.subplot(111)
+
+        ax.plot(fdist,b_pred_, marker="o", markersize=9, markeredgecolor="red")
+        ax.plot(fdist,b, marker="x", markersize=9, markeredgecolor="blue")
+        ax.plot([d],[0], marker="o", markersize=9, markeredgecolor="red")
+        fig.savefig(join(savepath,str(idx)+'.jpg'))
+
+# loaders, total_steps = focalblender.load_data(blenderpath,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
+#         BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
+# for st_iter, sample_batch in enumerate(loaders[0]):
+#     # Setting up input and output data
+#     img = sample_batch['input'].float()
+#     blur = sample_batch['blur'].float()
+#     depth = sample_batch['output'].float()
+#     s1=sample_batch['fdist']
+#     break
+
+# save_blurpred(img,blur,depth,s1,10,'C:\\Users\\lahir\\data\\lindefblur\\pred_blur\\')
 
 # =========== Train func. =========
-def train(img_stack_in,disp,blur,foc_dist):
+def train(img_stack,gt_disp,blur,foc_dist):
     model.train()
-    img_stack_in   = Variable(torch.FloatTensor(img_stack_in))
-    gt_disp    = Variable(torch.FloatTensor(disp))
-    img_stack, gt_disp, blur,foc_dist = img_stack_in.cuda(),  gt_disp.cuda(), blur[:,0:-1,:,:].cuda(),foc_dist.cuda()
+    img_stack   = Variable(torch.FloatTensor(img_stack))
+    gt_disp    = Variable(torch.FloatTensor(gt_disp))
+    img_stack, gt_disp, blur,foc_dist = img_stack.cuda(),  gt_disp.cuda(), blur.cuda(),foc_dist.cuda()
 
     #---------
     # max_val = torch.where(foc_dist>=100, torch.zeros_like(foc_dist), foc_dist) # exclude padding value
@@ -157,32 +193,15 @@ def train(img_stack_in,disp,blur,foc_dist):
 
     optimizer.zero_grad()
     beta_scale = 1 # smooth l1 do not have beta in 1.6, so we increase the input to and then scale back -- no significant improve according to our trials
-    stacked, stds, cost_stacked = model(img_stack, foc_dist)
+    cost3 = model(img_stack, foc_dist)
 
-    distloss = 0
-    blurloss=0
-    for i, (pred, std,cost) in enumerate(zip(stacked, stds,cost_stacked)):
-        if args.model == 'LinDFF1' or args.model == 'LinDFF':
-            pred_=torch.unsqueeze(pred,dim=1)
-        elif args.model == 'DFFNet':
-            pred_=pred
-        _cur_loss = F.smooth_l1_loss(pred_[mask] * beta_scale, gt_disp[mask]* beta_scale, reduction='none') / beta_scale
-        _blur_loss = F.smooth_l1_loss(cost[blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none')
-        distloss = distloss + args.lvl_w[i] * _cur_loss.mean()
-        blurloss = blurloss + args.lvl_w[i] * _blur_loss.mean()
+    blurloss = F.smooth_l1_loss(cost3[:,:-1,:,:][blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none').mean()
     torch.autograd.set_detect_anomaly(True) 
-    loss=blurloss
-    loss.backward()
+    blurloss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
     optimizer.step()
-    vis = {}
-    vis['pred'] = stacked[0].detach().cpu()
-    vis['mask'] = mask.type(torch.float).detach().cpu()
-    lossvalue = loss.data
-
-    del stacked
-    del loss
-    return lossvalue,vis
+    lossvalue = blurloss.data
+    return lossvalue
 
 
 def valid(img_stack_in,disp, foc_dist):
@@ -236,7 +255,7 @@ def main():
     for epoch in range(start_epoch, args.epochs+1):
         total_train_loss = 0
         lr_ = adjust_learning_rate(optimizer,epoch)
-        train_log.scalar_summary('lr_epoch', lr_, epoch)
+        # train_log.scalar_summary('lr_epoch', lr_, epoch)
 
         ## training ##
         for batch_idx, sample_batch in enumerate(loaders[0]):
@@ -247,19 +266,19 @@ def main():
             blur=sample_batch['blur'].float()
 
             start_time = time.time()
-            loss, vis = train(img_stack, gt_disp, blur,foc_dist)
+            loss = train(img_stack, gt_disp, blur,foc_dist)
 
-            if total_iters %10 == 0:
-                torch.cuda.synchronize()
-                print('epoch %d:  %d/ %d train_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[0]), loss, time.time() - start_time))
-                train_log.scalar_summary('loss_batch',loss, total_iters)
+            # if total_iters %10 == 0:
+            #     torch.cuda.synchronize()
+            #     print('epoch %d:  %d/ %d train_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[0]), loss, time.time() - start_time))
+            #     train_log.scalar_summary('loss_batch',loss, total_iters)
 
             total_train_loss += loss
             total_iters += 1
+        print('loss:'+str(total_train_loss/total_iters))
 
         # record the last batch
-        write_log(vis, img_stack[:, 0], img_stack[:, -1], gt_disp, train_log, epoch, thres=0.05)
-        train_log.scalar_summary('avg_loss', total_train_loss / len(loaders[0]), epoch)
+        # train_log.scalar_summary('avg_loss', total_train_loss / len(loaders[0]), epoch)
 
         # save model
         torch.save({
@@ -271,46 +290,51 @@ def main():
         },  os.path.abspath(args.savemodel) + '/' + saveName +'/model_{}.tar'.format(epoch))
 
         # save top 5 ckpts only
-        list_ckpt = glob(os.path.join( os.path.abspath(args.savemodel) + '/' + saveName, 'model_*'))
-        list_ckpt.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
-        if len(list_ckpt) > 5:
-            os.remove(list_ckpt[0])
+        # list_ckpt = glob(os.path.join( os.path.abspath(args.savemodel) + '/' + saveName, 'model_*'))
+        # list_ckpt.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
+        # if len(list_ckpt) > 5:
+        #     os.remove(list_ckpt[0])
 
         # Vaild
-        if epoch % 10 == 0:
-            total_val_loss = 0
+        # if epoch % 10 == 0:
+        #     total_val_loss = 0
 
-            for batch_idx, sample_batch in enumerate(loaders[1]):
-                img_stack=sample_batch['input'].float()
-                gt_disp=sample_batch['output'][:,-1,:,:]
-                gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
-                foc_dist=sample_batch['fdist'].float()
-                with torch.no_grad():
-                    start_time = time.time()
-                    val_loss, viz = valid(img_stack, gt_disp, foc_dist)
+        #     for batch_idx, sample_batch in enumerate(loaders[1]):
+        #         img_stack=sample_batch['input'].float()
+        #         gt_disp=sample_batch['output'][:,-1,:,:]
+        #         gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
+        #         foc_dist=sample_batch['fdist'].float()
+        #         with torch.no_grad():
+        #             start_time = time.time()
+        #             val_loss, viz = valid(img_stack, gt_disp, foc_dist)
 
-                if batch_idx %10 == 0:
-                    torch.cuda.synchronize()
-                    print('[val] epoch %d : %d/%d val_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[1]), val_loss, time.time() - start_time))
-                total_val_loss += val_loss
+        #         if batch_idx %10 == 0:
+        #             torch.cuda.synchronize()
+        #             print('[val] epoch %d : %d/%d val_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[1]), val_loss, time.time() - start_time))
+        #         total_val_loss += val_loss
 
 
-            avg_val_loss = total_val_loss / len(loaders[1])
-            err_thres = 0.05 # for validation purpose
-            write_log(viz, img_stack[:, 0], img_stack[:, -1], gt_disp, val_log, epoch, thres=err_thres)
-            val_log.scalar_summary('avg_loss', avg_val_loss, epoch)
+        #     avg_val_loss = total_val_loss / len(loaders[1])
+        #     err_thres = 0.05 # for validation purpose
+        #     write_log(viz, img_stack[:, 0], img_stack[:, -1], gt_disp, val_log, epoch, thres=err_thres)
+        #     val_log.scalar_summary('avg_loss', avg_val_loss, epoch)
 
-            # save best
-            if avg_val_loss < best_loss:
-                best_loss = avg_val_loss
-                torch.save({
-                    'epoch': epoch + 1,
-                    'iters': total_iters + 1,
-                    'best': best_loss,
-                    'state_dict': model.state_dict(),
-                    'optimize': optimizer.state_dict(),
-                },  os.path.abspath(args.savemodel) + '/' + saveName + '/best.tar')
+        #     # save best
+        #     if avg_val_loss < best_loss:
+        #         best_loss = avg_val_loss
+        #         torch.save({
+        #             'epoch': epoch + 1,
+        #             'iters': total_iters + 1,
+        #             'best': best_loss,
+        #             'state_dict': model.state_dict(),
+        #             'optimize': optimizer.state_dict(),
+        #         },  os.path.abspath(args.savemodel) + '/' + saveName + '/best.tar')
 
 
         torch.cuda.empty_cache()
+
+if __name__ == '__main__':
+    main()
+
+
 

@@ -2,16 +2,14 @@ import torch
 import torch.nn as nn
 import torch.utils.data
 from torchvision import transforms, utils
-
-from os import listdir, mkdir
-from os.path import isfile, join, isdir
+from os import listdir
+from os.path import isfile, join
 from visdom import Visdom
 import numpy as np
 import random
 import OpenEXR
 from PIL import Image
 from skimage import img_as_float
-import matplotlib.pyplot as plt
 
 # reading depth files
 def read_dpt(img_dpt_path): 
@@ -19,7 +17,7 @@ def read_dpt(img_dpt_path):
     dw = dpt_img.header()['dataWindow']
     size = (dw.max.x - dw.min.x + 1, dw.max.y - dw.min.y + 1)
     (r, g, b) = dpt_img.channels("RGB")
-    dpt = np.fromstring(r, dtype=np.float16)
+    dpt = np.frombuffer(r, dtype=np.float16)
     dpt.shape = (size[1], size[0])
     return dpt
 
@@ -80,7 +78,7 @@ blur1,blur2... corresponds to the focal stack
 class ImageDataset(torch.utils.data.Dataset):
     """Focal place dataset."""
 
-    def __init__(self, root_dir, transform_fnc=None,blur=1,aif=0,fstack=0,focus_dist=[0.1,.15,.3,0.7,1.5,100000],
+    def __init__(self, root_dir, transform_fnc=None,blur=1,aif=0,fstack=0,focus_dist=[0.1,.15,.3,0.7,1.5,-1],
                 req_f_indx=[0,2], max_dpt = 3.):
 
         self.root_dir = root_dir
@@ -92,6 +90,7 @@ class ImageDataset(torch.utils.data.Dataset):
         self.fstack=fstack
         self.img_num = len(focus_dist)
         
+        assert focus_dist[-1]==-1 , "the last entry of the focus distances should be -1 (to mean infinity)"
 
         self.focus_dist = focus_dist
         self.req_f_idx=req_f_indx
@@ -125,11 +124,9 @@ class ImageDataset(torch.utils.data.Dataset):
         mats_output = np.zeros((256, 256, 0))
         mats_blur = np.zeros((256, 256, 0))
 
-        ##### Read and process an image
+        ##### Read and process depth image
         idx_dpt = int(idx)
         img_dpt = read_dpt(self.root_dir + self.imglist_dpt[idx_dpt])
-        #img_dpt_scaled = np.clip(img_dpt, 0., 1.9)
-        #mat_dpt_scaled = img_dpt_scaled / 1.9
         mat_dpt_scaled = img_dpt/self.max_dpt
         mat_dpt = mat_dpt_scaled.copy()[:, :, np.newaxis]
 
@@ -149,13 +146,12 @@ class ImageDataset(torch.utils.data.Dataset):
             mat_all = img_all.copy() / 255.
             mat_all=np.expand_dims(mat_all,axis=-1)
             mats_input = np.concatenate((mats_input, mat_all), axis=3)
-
-            img_msk = get_blur_ratio(self.focus_dist[req], img_dpt,self.f)
-            mat_msk = img_msk.copy()[:, :, np.newaxis]
-            #append blur to the output
-            mats_blur = np.concatenate((mats_blur, mat_msk), axis=2)
-
-            fdist=np.concatenate((fdist,[self.focus_dist[req]]),axis=0)
+            if(not self.focus_dist[req]==-1):
+                img_msk = get_blur_ratio(self.focus_dist[req], img_dpt,self.f)
+                mat_msk = img_msk.copy()[:, :, np.newaxis]
+                #append blur to the output
+                mats_blur = np.concatenate((mats_blur, mat_msk), axis=2)
+                fdist=np.concatenate((fdist,[self.focus_dist[req]]),axis=0)
         
         #append depth to the output
         mats_output = np.concatenate((mats_output, mat_dpt), axis=2)
@@ -209,7 +205,7 @@ datapath='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\'
 
 def get_data_stats(datapath):
     loaders, total_steps = load_data(datapath,aif=0,train_split=0.8,fstack=1,WORKERS_NUM=0,
-        BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4],MAX_DPT=1.0)
+        BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
     print('stats of train data')
     get_loader_stats(loaders[0])
     print('______')
@@ -287,6 +283,7 @@ get_workable_s1s2ranges(p,N,f,s2range,s1range,blur_thres)
 
 #save n number of relative blur plots
 def save_blur_ratio(blur,fdist,s2,n,savepath):
+    import matplotlib.pyplot as plt
     np.random.seed(42)
     for idx in range(n):
         i,j=(np.random.random(size=2)*s2.shape[-1]).tolist()
@@ -299,18 +296,16 @@ def save_blur_ratio(blur,fdist,s2,n,savepath):
         ax.plot([d],[0], marker="o", markersize=9, markeredgecolor="red")
         ax.set_xlabel("fdist")
         ax.set_ylabel("|s1-s2|")
-        fig.savefig(os.path.join(savepath,str(idx)+'.jpg'))
+        fig.savefig(join(savepath,str(idx)+'.jpg'))
 
 #plot blur ratio
-# import matplotlib.pyplot as plt
-# import os
 
 # datapath='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\'
 # loaders, total_steps = load_data(datapath,aif=0,train_split=0.8,fstack=1,WORKERS_NUM=0,
-#         BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,100000],REQ_F_IDX=[0,1,2,3,4],MAX_DPT=1.0)
+#         BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
 # for st_iter, sample_batch in enumerate(loaders[0]):
 #     # Setting up input and output data
-#     X = sample_batch['input'][:,0,:,:,:].float()
+#     X = sample_batch['input'].float()
 #     Y = sample_batch['blur'].float()
 #     D = sample_batch['output'].float()
 #     s1=sample_batch['fdist']
@@ -318,14 +313,7 @@ def save_blur_ratio(blur,fdist,s2,n,savepath):
 #     break
 
 # savepath='C:\\Users\\lahir\\data\\lindefblur\\realative_blur_figures\\'
-# save_blur_ratio(Y,fdist,D,10,savepath)
-# #plot blur and depth
-# b=Y[2,0,:,:].numpy()
-# d=D[0,0,:,:].numpy()
-# plt.imshow(b)
-# plt.show()
-# plt.imshow(d)
-# plt.show()
+# save_blur_ratio(Y,fdist,D,100,savepath)
 
 
 

@@ -77,18 +77,14 @@ class LinBlur(nn.Module):
                                  conv2.reshape(b, n, -1, h//8, w//8).permute(0, 2, 1, 3, 4),\
                                  conv1.reshape(b, n, -1, h//4, w//4).permute(0, 2, 1, 3, 4)
 
-        print('before div _vol1:'+str(_vol1.shape))
         if self.use_div == 1:
             vol4, vol3, vol2, vol1 = self.div_feat_volume(_vol4), self.div_feat_volume(_vol3),\
                                      self.div_feat_volume(_vol2), self.div_feat_volume(_vol1)
-            print('vol1:'+str(vol1.shape))
         else:
             vol4, vol3, vol2, vol1 =  _vol4, _vol3, _vol2, _vol1
-            print('vol1:'+str(vol1.shape))
         
         if self.level == 1:
             _, cost3 = self.decoder3(vol1)
-            print('cost3:'+str(cost3.shape))
 
         elif self.level == 2:
             feat4_2x, cost4 = self.decoder4(vol2)
