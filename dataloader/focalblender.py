@@ -4,12 +4,10 @@ import torch.utils.data
 from torchvision import transforms, utils
 from os import listdir
 from os.path import isfile, join
-from visdom import Visdom
 import numpy as np
 import random
 import OpenEXR
 from PIL import Image
-from skimage import img_as_float
 
 # reading depth files
 def read_dpt(img_dpt_path): 
