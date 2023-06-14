@@ -190,7 +190,7 @@ def load_data(data_dir,aif,train_split,fstack,
     dataset_valid = torch.utils.data.Subset(img_dataset, indices_valid)
 
     loader_train = torch.utils.data.DataLoader(dataset=dataset_train, num_workers=WORKERS_NUM, batch_size=BATCH_SIZE, shuffle=True)
-    loader_valid = torch.utils.data.DataLoader(dataset=dataset_valid, num_workers=1, batch_size=BATCH_SIZE, shuffle=False)
+    loader_valid = torch.utils.data.DataLoader(dataset=dataset_valid, num_workers=WORKERS_NUM, batch_size=BATCH_SIZE, shuffle=False)
 
     total_steps = int(len(dataset_train) / BATCH_SIZE)
     print("Total number of steps per epoch:", total_steps)

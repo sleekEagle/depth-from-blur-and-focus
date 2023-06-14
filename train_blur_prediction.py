@@ -11,7 +11,7 @@ import torch.utils.data
 from torch.autograd import Variable
 import torch.nn.functional as F
 import time
-from models import LinDFF,LinDFF1,DFFNet,LinDef,LinBlur
+from models import LinDFF,LinDFF1,DFFNet,LinDef,LinBlur1
 from utils import logger, write_log
 torch.backends.cudnn.benchmark=True
 from glob import glob
@@ -36,11 +36,11 @@ parser.add_argument('--lvl_w', nargs='+', default=[8./15, 4./15, 2./15, 1./15], 
 parser.add_argument('--lr', type=float, default=0.0001,  help='learning rate')
 parser.add_argument('--epochs', type=int, default=700, help='number of epochs to train')
 parser.add_argument('--batchsize', type=int, default=12, help='samples per batch')
-parser.add_argument('--model', default='LinBlur', help='save path')
+parser.add_argument('--model', default='LinBlur1', help='save path')
 
 
 # ====== log path ==========
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinBlur\\model_20.tar',   help='path to pre-trained checkpoint if any')
+parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinBlur1\\model_120.tar',   help='path to pre-trained checkpoint if any')
 parser.add_argument('--savemodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
@@ -72,8 +72,8 @@ elif args.model == 'LinDef':
     model = LinDef(3,1, 16, flag_step2=False)
     model = nn.DataParallel(model)
     model.cuda()
-elif args.model == 'LinBlur':
-    model = LinBlur(clean=False,level=1, use_div=1)
+elif args.model == 'LinBlur1':
+    model = LinBlur1(clean=False,level=1,use_div=0)
     model = nn.DataParallel(model)
     model.cuda()
 
@@ -159,19 +159,19 @@ def save_blurpred(img,blur,depth,s1,n,savepath):
         ax.plot(fdist,b_pred_, marker="o", markersize=9, markeredgecolor="red")
         ax.plot(fdist,b, marker="x", markersize=9, markeredgecolor="blue")
         ax.plot([d],[0], marker="o", markersize=9, markeredgecolor="red")
-        fig.savefig(join(savepath,str(idx)+'.jpg'))
+        fig.savefig(join(savepath,str(idx)+'_test.jpg'))
 
 # loaders, total_steps = focalblender.load_data(blenderpath,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
 #         BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
-# for st_iter, sample_batch in enumerate(loaders[0]):
+# for st_iter, sample_batch in enumerate(loaders[1]):
 #     # Setting up input and output data
 #     img = sample_batch['input'].float()
 #     blur = sample_batch['blur'].float()
 #     depth = sample_batch['output'].float()
 #     s1=sample_batch['fdist']
 #     break
-
-# save_blurpred(img,blur,depth,s1,10,'C:\\Users\\lahir\\data\\lindefblur\\pred_blur\\')
+    
+# save_blurpred(img,blur,depth,s1,100,'C:\\Users\\lahir\\data\\lindefblur\\pred_blur_lindiff1\\')
 
 # =========== Train func. =========
 def train(img_stack,gt_disp,blur,foc_dist):
@@ -333,8 +333,8 @@ def main():
 
         torch.cuda.empty_cache()
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
 
 
 

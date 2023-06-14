@@ -23,9 +23,9 @@ from models.featExactor2 import FeatExactor
 
 # Ours-FV (use_diff=0) and Ours-DFV (use_diff=1) model
 
-class LinBlur(nn.Module):
+class LinBlur1(nn.Module):
     def __init__(self, clean,level=1, use_div=1):
-        super(LinBlur, self).__init__()
+        super(LinBlur1, self).__init__()
 
         self.clean = clean
         self.feature_extraction = FeatExactor()
