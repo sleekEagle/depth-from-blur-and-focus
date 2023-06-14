@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser(description='DFVDFF')
 # === dataset =====
 parser.add_argument('--dataset', default=['blender'], nargs='+',  help='data Name')
 parser.add_argument('--DDFF12_pth', default=None, help='DDFF12 data path')
-parser.add_argument('--FoD_pth', default='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\', help='FOD data path')
+parser.add_argument('--data_path', default='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\', help='FOD data path')
 parser.add_argument('--FoD_scale', default=1.0,
                     help='FoD dataset gt scale for loss balance, because FoD_GT: 0.1-1.5, DDFF12_GT 0.02-0.28, '
                          'empirically we find this scale help improve the model performance for our method and DDFF')
@@ -134,8 +134,7 @@ if 'blender' not in args.dataset:
 
 if 'blender' in args.dataset:
     from dataloader import focalblender
-    blenderpath='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\'
-    loaders, total_steps = focalblender.load_data(blenderpath,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
+    loaders, total_steps = focalblender.load_data(args.data_path,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
         BATCH_SIZE=args.batchsize,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
     
 
