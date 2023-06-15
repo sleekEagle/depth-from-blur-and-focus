@@ -197,10 +197,6 @@ def load_data(data_dir,aif,train_split,fstack,
 
     return [loader_train, loader_valid], total_steps
 
-
-datapath='C:\\Users\\lahir\\focalstacks\\datasets\\mediumN1\\'
-# datapath='C:\\usr\\wiss\\maximov\\RD\\DepthFocus\\Datasets\\focal_data\\'
-
 def get_data_stats(datapath):
     loaders, total_steps = load_data(datapath,aif=0,train_split=0.8,fstack=1,WORKERS_NUM=0,
         BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
