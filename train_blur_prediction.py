@@ -137,41 +137,6 @@ if 'blender' in args.dataset:
     loaders, total_steps = focalblender.load_data(args.data_path,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
         BATCH_SIZE=args.batchsize,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
     
-
-def save_blurpred(img,blur,depth,s1,n,savepath):
-    import matplotlib.pyplot as plt
-    import numpy as np
-    fdist=s1.numpy()[0,:]
-    cost3=model(img,s1)
-    for idx in range(n):
-        i,j=(np.random.random(size=2)*depth.shape[-1]).tolist()
-        i,j=int(i),int(j)
-        b_pred=cost3[0,:-1,i,j].cpu().detach().numpy()
-        b_pred_=b_pred*(fdist-2.9e-3)
-        #get GT blur
-        b=blur[0,:,i,j].numpy()*(fdist-2.9e-3)
-        d=depth[0,0,i,j].numpy().item()
-
-        fig = plt.figure()
-        ax = plt.subplot(111)
-
-        ax.plot(fdist,b_pred_, marker="o", markersize=9, markeredgecolor="red")
-        ax.plot(fdist,b, marker="x", markersize=9, markeredgecolor="blue")
-        ax.plot([d],[0], marker="o", markersize=9, markeredgecolor="red")
-        fig.savefig(join(savepath,str(idx)+'_test.jpg'))
-
-# loaders, total_steps = focalblender.load_data(blenderpath,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
-#         BATCH_SIZE=1,FOCUS_DIST=[0.1,.15,.3,0.7,1.5,-1],REQ_F_IDX=[0,1,2,3,4,5],MAX_DPT=1.0)
-# for st_iter, sample_batch in enumerate(loaders[1]):
-#     # Setting up input and output data
-#     img = sample_batch['input'].float()
-#     blur = sample_batch['blur'].float()
-#     depth = sample_batch['output'].float()
-#     s1=sample_batch['fdist']
-#     break
-    
-# save_blurpred(img,blur,depth,s1,100,'C:\\Users\\lahir\\data\\lindefblur\\pred_blur_lindiff1\\')
-
 # =========== Train func. =========
 def train(img_stack,gt_disp,blur,foc_dist):
     model.train()
@@ -332,8 +297,8 @@ def main():
 
         torch.cuda.empty_cache()
 
-# if __name__ == '__main__':
-#     main()
+if __name__ == '__main__':
+    main()
 
 
 
