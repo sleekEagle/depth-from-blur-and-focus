@@ -33,6 +33,11 @@ def get_blur_ratio(s1,s2,f):
     blur=np.abs(s1-s2)/(s1-f)
     return blur
 
+#blur at infinity depends only on s2 and the camera parameters (which we ignore due to normalization)
+def get_inf_blur(s2):
+    blur=1/s2
+    return blur
+
 # s1=[0.1,0.15,0.3,0.7,1.5]
 # s2=[0.1,0.15,0.3,0.7,1.5,1.83]
 # f=2.9e-3
@@ -146,10 +151,12 @@ class ImageDataset(torch.utils.data.Dataset):
             mats_input = np.concatenate((mats_input, mat_all), axis=3)
             if(not self.focus_dist[req]==-1):
                 img_msk = get_blur_ratio(self.focus_dist[req], img_dpt,self.f)
-                mat_msk = img_msk.copy()[:, :, np.newaxis]
-                #append blur to the output
-                mats_blur = np.concatenate((mats_blur, mat_msk), axis=2)
-                fdist=np.concatenate((fdist,[self.focus_dist[req]]),axis=0)
+            else:
+                img_msk = get_inf_blur(img_dpt)
+            mat_msk = img_msk.copy()[:, :, np.newaxis]
+            #append blur to the output
+            mats_blur = np.concatenate((mats_blur, mat_msk), axis=2)
+            fdist=np.concatenate((fdist,[self.focus_dist[req]]),axis=0)
         
         #append depth to the output
         mats_output = np.concatenate((mats_output, mat_dpt), axis=2)
@@ -305,6 +312,12 @@ def save_blur_ratio(blur,fdist,s2,n,savepath):
 #     s1=sample_batch['fdist']
 #     fdist=s1.numpy()[0,:]
 #     break
+
+# Y[0,-1,:,:]
+
+# invs2=1/D
+
+# torch.mean(invs2-Y[0,-1,:,:])
 
 # savepath='C:\\Users\\lahir\\data\\lindefblur\\realative_blur_figures\\'
 # save_blur_ratio(Y,fdist,D,100,savepath)

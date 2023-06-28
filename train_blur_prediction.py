@@ -40,7 +40,7 @@ parser.add_argument('--model', default='LinBlur1', help='save path')
 
 
 # ====== log path ==========
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinBlur1\\model_120.tar',   help='path to pre-trained checkpoint if any')
+parser.add_argument('--loadmodel', default=None,   help='path to pre-trained checkpoint if any')
 parser.add_argument('--savemodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
@@ -152,14 +152,13 @@ def train(img_stack,gt_disp,blur,foc_dist):
 
     mask = gt_disp > 0
     mask.detach_()
-    blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1]-1,dim=1)
+    blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1],dim=1)
     #----
-
     optimizer.zero_grad()
     beta_scale = 1 # smooth l1 do not have beta in 1.6, so we increase the input to and then scale back -- no significant improve according to our trials
     cost3 = model(img_stack, foc_dist)
 
-    blurloss = F.smooth_l1_loss(cost3[:,:-1,:,:][blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none').mean()
+    blurloss = F.smooth_l1_loss(cost3[blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none').mean()
     torch.autograd.set_detect_anomaly(True) 
     blurloss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
@@ -299,6 +298,19 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+#testing. delete
+
+# model = DFFNet(clean=False,level=1, use_diff=args.use_diff)
+# model = nn.DataParallel(model)
+# model.cuda()
+
+
+# a=torch.rand(6,5,3,224,224).cuda()
+# f=torch.rand(6,5)
+# out=model(a,f)
 
 
 

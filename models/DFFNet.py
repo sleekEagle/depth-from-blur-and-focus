@@ -24,7 +24,7 @@ class DFFNet(nn.Module):
             self.decoder3 = decoderBlock(2,16,16, stride=(1,1,1),up=False, nstride=1)
         elif level == 2:
             self.decoder3 = decoderBlock(2,32,32, stride=(1,1,1),up=False, nstride=1)
-            self.decoder4 = decoderBlock(2,32,32, up=True)
+            self.decoder4 =  decoderBlock(2,32,32, up=True)
         elif level == 3:
             self.decoder3 = decoderBlock(2, 32, 32, stride=(1, 1, 1), up=False, nstride=1)
             self.decoder4 = decoderBlock(2, 64, 32, up=True)
@@ -45,8 +45,6 @@ class DFFNet(nn.Module):
 
     def forward(self, stack, focal_dist):
         b, n, c, h, w = stack.shape
-        #the feature calculation is independent of the focal stack 
-        #i.e. it treats every image independently
         input_stack = stack.reshape(b*n, c, h , w)
 
         conv4, conv3, conv2, conv1  = self.feature_extraction(input_stack)
@@ -56,18 +54,23 @@ class DFFNet(nn.Module):
                                  conv3.reshape(b, n, -1, h//16, w//16).permute(0, 2, 1, 3, 4),\
                                  conv2.reshape(b, n, -1, h//8, w//8).permute(0, 2, 1, 3, 4),\
                                  conv1.reshape(b, n, -1, h//4, w//4).permute(0, 2, 1, 3, 4)
+        #for input of bs,5,3,224,224 where 3 is the EGB channels
+        #_vol1 : bs,16,5,56,56
 
-        print('before diff _vol4:'+str(_vol4.shape))
-        if self.use_div == 1:
+        print('_vol1:'+str(_vol1.shape))
+        if self.use_diff == 1:
             vol4, vol3, vol2, vol1 = self.diff_feat_volume1(_vol4), self.diff_feat_volume1(_vol3),\
                                      self.diff_feat_volume1(_vol2), self.diff_feat_volume1(_vol1)
-            print('vol4:'+str(vol4.shape))
         else:
             vol4, vol3, vol2, vol1 =  _vol4, _vol3, _vol2, _vol1
-            print('vol4:'+str(vol4.shape))
+            #vol1: bs,16,5,56,56
         
+        print('vol1:'+str(vol1.shape))
+
         if self.level == 1:
             _, cost3 = self.decoder3(vol1)
+            #cost3 : bs,5,56,56
+            print('cost3:'+str(cost3.shape))
 
         elif self.level == 2:
             feat4_2x, cost4 = self.decoder4(vol2)
