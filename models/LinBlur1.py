@@ -51,7 +51,8 @@ class LinBlur1(nn.Module):
             self.decoder6 = decoderBlock(2, 128, 128, up=True, pool=True)
 
         # reg
-        self.disp_reg = disparityregression(1)
+        self.distreg=distregression()
+        self.f=2.9e-3
 
     #divide feature sets 
     def div_feat_volume(self, vol):
@@ -110,9 +111,8 @@ class LinBlur1(nn.Module):
             _, cost3 = self.decoder3(feat3)
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
-        return cost3
-        
         # pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
+        return cost3
 
         # different output based on level
         # stacked = [pred3]

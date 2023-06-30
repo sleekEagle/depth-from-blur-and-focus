@@ -15,6 +15,8 @@ from models import LinDFF,LinDFF1,DFFNet,LinDef,LinBlur1
 from utils import logger, write_log
 torch.backends.cudnn.benchmark=True
 from glob import glob
+from models.submodule import LinearLoss
+
 
 '''
 Main code for Ours-FV and Ours-DFV training 
@@ -78,6 +80,7 @@ elif args.model == 'LinBlur1':
     model.cuda()
 
 optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
+lin_blur_loss=LinearLoss()
 
 # ========= load model if any ================
 if args.loadmodel is not None:
@@ -157,14 +160,20 @@ def train(img_stack,gt_disp,blur,foc_dist):
     optimizer.zero_grad()
     beta_scale = 1 # smooth l1 do not have beta in 1.6, so we increase the input to and then scale back -- no significant improve according to our trials
     cost3 = model(img_stack, foc_dist)
-
+    #cost3 shape: torch.Size([12, 6, 256, 256])
+    #gt_disp shape : torch.Size([12, 1, 256, 256])
+    #foc_dist shape : torch.Size([12, 6])
+    s1=foc_dist[:,:-1]
+    linloss=lin_blur_loss(s1,gt_disp,gt_disp,cost3[:,:-1,:,:])
     blurloss = F.smooth_l1_loss(cost3[blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none').mean()
+    loss=linloss+blurloss
     torch.autograd.set_detect_anomaly(True) 
-    blurloss.backward()
+    loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
     optimizer.step()
-    lossvalue = blurloss.data
-    return lossvalue
+    blurlossvalue = blurloss.data
+    linlossvalue = linloss.data
+    return blurlossvalue,linlossvalue
 
 
 def valid(img_stack_in,disp, foc_dist):
@@ -216,7 +225,7 @@ def main():
     total_iters = total_iter
 
     for epoch in range(start_epoch, args.epochs+1):
-        total_train_loss = 0
+        total_train_loss_blur,total_train_loss_lin = 0,0
         lr_ = adjust_learning_rate(optimizer,epoch)
         # train_log.scalar_summary('lr_epoch', lr_, epoch)
 
@@ -229,16 +238,17 @@ def main():
             blur=sample_batch['blur'].float()
 
             start_time = time.time()
-            loss = train(img_stack, gt_disp, blur,foc_dist)
+            blurlossvalue,linlossvalue = train(img_stack, gt_disp, blur,foc_dist)
 
             # if total_iters %10 == 0:
             #     torch.cuda.synchronize()
             #     print('epoch %d:  %d/ %d train_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[0]), loss, time.time() - start_time))
             #     train_log.scalar_summary('loss_batch',loss, total_iters)
 
-            total_train_loss += loss
+            total_train_loss_blur += blurlossvalue
+            total_train_loss_lin += linlossvalue
             total_iters += 1
-        print('loss:'+str(total_train_loss/total_iters))
+        print('blur loss=%2.5f linear loss=%2.5f' %(total_train_loss_blur/total_iters,total_train_loss_lin/total_iters))
 
         # record the last batch
         # train_log.scalar_summary('avg_loss', total_train_loss / len(loaders[0]), epoch)

@@ -220,7 +220,7 @@ class decoderBlock(nn.Module):
 
 class decoderBlock2D(nn.Module):
     def __init__(self, nconvs, inchannelF,channelF,stride=(1,1,1),up=False, nstride=1,pool=False):
-        super(decoderBlock, self).__init__()
+        super(decoderBlock2D, self).__init__()
         self.pool=pool
         stride = [stride]*nstride + [(1,1,1)] * (nconvs-nstride)
         self.convs = [sepConv3dBlock(inchannelF,channelF,stride=stride[0])]
@@ -286,4 +286,58 @@ class decoderBlock2D(nn.Module):
                 costl = self.classify(fvl)
 
         return fvl,costl.squeeze(1)
+    
+'''
+x                 x
+ \              /
+ x               x
+   \          /
+    x       x
+     \      /
+       x    x
+
+---------------------------------------
+measures the 'quality' of the price-wise linear ness of the 
+predicted blur values
+'''
+class LinearLoss(nn.Module):
+    def __init__(self):
+        super(LinearLoss, self).__init__()
+        self.criterion = torch.nn.MSELoss()
+    def forward(self, s1,s2_est,gt_disp,blur_est):
+        valid_mask = (gt_disp>0).detach()
+        s1=torch.unsqueeze(s1,dim=2).unsqueeze(dim=3)
+        s1=torch.repeat_interleave(s1,repeats=gt_disp.shape[2],dim=2).repeat_interleave(repeats=gt_disp.shape[3],dim=3)
+        s2_=torch.repeat_interleave(s2_est,repeats=s1.shape[1],dim=1)
+        valid_mask=torch.repeat_interleave(valid_mask,repeats=s1.shape[1],dim=1)        
+        mask=(s1<s2_).int()
+        mask[mask==0]=-1
+        GT_blur=(s2_-s1)*mask
+        loss=self.criterion(GT_blur[valid_mask],blur_est[valid_mask])
+        return loss
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

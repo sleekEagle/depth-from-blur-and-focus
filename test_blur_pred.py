@@ -31,9 +31,9 @@ parser.add_argument('--model', default='LinBlur1', help='save path')
 
 
 # ====== log path ==========
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\blender_scale1.0_nsck6_lr0.0001_ep700_b12_lvl4_modelLinBlur1\\model_699.tar',   help='path to pre-trained checkpoint if any')
-parser.add_argument('--figpath', default='C:\\Users\\lahir\\data\\lindefblur\\pred_blur_linediff1_nodiv_700epochs\\', help='save path')
-parser.add_argument('--isVali', type=int, default=1, help='Save images for the valudation dataset ?. If 0 used train dataset')
+parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\Documents\\model_699.tar',   help='path to pre-trained checkpoint if any')
+parser.add_argument('--figpath', default='C:\\Users\\lahir\\data\\lindefblur\\pred_blur_lindiff1_nondiv_700epochs_pred_infalso\\', help='save path')
+parser.add_argument('--isVali', type=int, default=0, help='Save images for the valudation dataset ?. If 0 used train dataset')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
 args = parser.parse_args()
@@ -134,17 +134,24 @@ def save_blurpred(img,blur,depth,s1,n,savepath):
         i,j=(np.random.random(size=2)*depth.shape[-1]).tolist()
         i,j=int(i),int(j)
         b_pred=cost3[0,:-1,i,j].cpu().detach().numpy()
-        b_pred_=b_pred*(fdist-2.9e-3)
+        b_pred_=b_pred*(fdist[:-1]-2.9e-3)
+        s2_pred=cost3[0,-1,i,j].cpu().detach().numpy()
         #get GT blur
-        b=blur[0,:,i,j].numpy()*(fdist-2.9e-3)
+        b=blur[0,:-1,i,j].numpy()*(fdist[:-1]-2.9e-3)
         d=depth[0,0,i,j].numpy().item()
 
         fig = plt.figure()
         ax = plt.subplot(111)
 
-        ax.plot(fdist,b_pred_, marker="o", markersize=9, markeredgecolor="red")
-        ax.plot(fdist,b, marker="x", markersize=9, markeredgecolor="blue")
-        ax.plot([d],[0], marker="o", markersize=9, markeredgecolor="red")
+        line1,=ax.plot(fdist[:-1],b_pred_, marker="o", markersize=9, markeredgecolor="red")
+        line2,=ax.plot(fdist[:-1],b, marker="x", markersize=9, markeredgecolor="blue")
+        line3,=ax.plot([d],[0], marker="o", markersize=9, markeredgecolor="red")
+        line4,=ax.plot([1/s2_pred],[0], marker="^", markersize=9, markeredgecolor="green")
+        line1.set_label('predicteed blur')
+        line2.set_label('GT blur')
+        line3.set_label('GT depth')
+        line4.set_label('depth predicted from inf image')
+        ax.legend()
         fig.savefig(join(savepath,str(idx)+'.jpg'))
 
 loaders, total_steps = focalblender.load_data(args.data_path,aif=False,train_split=0.8,fstack=1,WORKERS_NUM=0,
