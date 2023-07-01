@@ -45,13 +45,15 @@ parser.add_argument('--bweight', type=float, default=1.0,  help='learning rate')
 
 # ====== log path ==========
 parser.add_argument('--loadmodel', default=None,   help='path to pre-trained checkpoint if any')
-parser.add_argument('--resultspth', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
+parser.add_argument('--resultspth', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\pp', help='save path')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
 args = parser.parse_args()
 args.logname = '_'.join(args.dataset)
 
 #setting up logging
+if not os.path.exists(args.resultspth):
+    os.makedirs(args.resultspth)
 now = datetime.now()
 dt_string = now.strftime("%d-%m-%Y_%H_%M_%S")+'.log'
 logpath=join(args.resultspth,dt_string)
