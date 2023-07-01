@@ -275,7 +275,7 @@ def main():
             'best': best_loss,
             'state_dict': model.state_dict(),
             'optimize':optimizer.state_dict(),
-        },  os.path.abspath(args.resultspth) + '/' + saveName +'/model_{}.tar'.format(epoch))
+        },  os.path.abspath(args.resultspth)+'/model_{}.tar'.format(epoch))
 
         # save top 5 ckpts only
         # list_ckpt = glob(os.path.join( os.path.abspath(args.savemodel) + '/' + saveName, 'model_*'))
