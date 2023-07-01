@@ -12,10 +12,11 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import time
 from models import LinDFF,LinDFF1,DFFNet,LinDef,LinBlur1
-from utils import logger, write_log
 torch.backends.cudnn.benchmark=True
 from glob import glob
 from models.submodule import LinearLoss
+import logging
+from datetime import datetime
 
 
 '''
@@ -43,11 +44,21 @@ parser.add_argument('--model', default='LinBlur1', help='save path')
 
 # ====== log path ==========
 parser.add_argument('--loadmodel', default=None,   help='path to pre-trained checkpoint if any')
-parser.add_argument('--savemodel', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
+parser.add_argument('--resultspth', default='C:\\Users\\lahir\\code\\defocus\\linmodels\\', help='save path')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
 args = parser.parse_args()
 args.logname = '_'.join(args.dataset)
+
+#setting up logging
+now = datetime.now()
+dt_string = now.strftime("%d-%m-%Y_%H_%M_%S")+'.log'
+logpath=join(args.resultspth,dt_string)
+logging.basicConfig(filename=logpath, format='%(levelname)s:%(asctime)s:%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p',
+                    filemode='w',encoding='utf-8', level=logging.INFO)
+logging.info('Starting training')
+
+logging.info(args)
 
 
 # ============ init ===============
@@ -159,35 +170,38 @@ def train(img_stack,gt_disp,blur,foc_dist):
     #----
     optimizer.zero_grad()
     beta_scale = 1 # smooth l1 do not have beta in 1.6, so we increase the input to and then scale back -- no significant improve according to our trials
-    cost3 = model(img_stack, foc_dist)
+    cost3,s2_pred= model(img_stack, foc_dist)
     #cost3 shape: torch.Size([12, 6, 256, 256])
     #gt_disp shape : torch.Size([12, 1, 256, 256])
     #foc_dist shape : torch.Size([12, 6])
     s1=foc_dist[:,:-1]
     linloss=lin_blur_loss(s1,gt_disp,gt_disp,cost3[:,:-1,:,:])
     blurloss = F.smooth_l1_loss(cost3[blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none').mean()
-    loss=linloss+blurloss
+    dmask=torch.squeeze(mask,dim=1)
+    depthloss = F.smooth_l1_loss(s2_pred[dmask] * beta_scale, gt_disp[:,0,:,:][dmask]* beta_scale, reduction='none').mean()
+    loss=blurloss
     torch.autograd.set_detect_anomaly(True) 
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
     optimizer.step()
     blurlossvalue = blurloss.data
     linlossvalue = linloss.data
-    return blurlossvalue,linlossvalue
+    depthlossvalue=depthloss.data
+    return blurlossvalue,linlossvalue,depthlossvalue
 
 
-def valid(img_stack_in,disp, foc_dist):
+def valid(img_stack,gt_disp, foc_dist):
     model.eval()
-    img_stack = Variable(torch.FloatTensor(img_stack_in))
-    gt_disp = Variable(torch.FloatTensor(disp))
+    img_stack = Variable(torch.FloatTensor(img_stack))
+    gt_disp = Variable(torch.FloatTensor(gt_disp))
     img_stack, gt_disp, foc_dist = img_stack.cuda() , gt_disp.cuda(), foc_dist.cuda()
-
+    gt_disp=torch.squeeze(gt_disp)
     #---------
     mask = gt_disp > 0
     mask.detach_()
     #----
     with torch.no_grad():
-        pred_disp, _, _ = model(img_stack, foc_dist)
+        cost3,pred_disp= model(img_stack, foc_dist)
         if args.model == 'LinDFF' or args.model == 'LinDFF1':
             pred_disp=torch.unsqueeze(pred_disp,dim=1)
         loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
@@ -218,14 +232,10 @@ def main():
     if args.use_diff > 0:
         saveName = saveName + '_diffFeat{}'.format(args.use_diff)
 
-
-    train_log = logger.Logger( os.path.abspath(args.savemodel), name=saveName + '/train')
-    val_log = logger.Logger( os.path.abspath(args.savemodel), name=saveName + '/val')
-
     total_iters = total_iter
 
     for epoch in range(start_epoch, args.epochs+1):
-        total_train_loss_blur,total_train_loss_lin = 0,0
+        total_train_loss_blur,total_train_loss_lin,total_train_loss_depth = 0,0,0
         lr_ = adjust_learning_rate(optimizer,epoch)
         # train_log.scalar_summary('lr_epoch', lr_, epoch)
 
@@ -238,7 +248,7 @@ def main():
             blur=sample_batch['blur'].float()
 
             start_time = time.time()
-            blurlossvalue,linlossvalue = train(img_stack, gt_disp, blur,foc_dist)
+            blurlossvalue,linlossvalue,depthlossvalue = train(img_stack, gt_disp, blur,foc_dist)
 
             # if total_iters %10 == 0:
             #     torch.cuda.synchronize()
@@ -247,9 +257,11 @@ def main():
 
             total_train_loss_blur += blurlossvalue
             total_train_loss_lin += linlossvalue
+            total_train_loss_depth+=depthlossvalue
             total_iters += 1
-        print('blur loss=%2.5f linear loss=%2.5f' %(total_train_loss_blur/total_iters,total_train_loss_lin/total_iters))
-
+        print('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' %(total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters))
+        # logging.info('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' , total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters)
+        logging.info('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f', total_train_loss_blur/total_iters, total_train_loss_lin/total_iters, total_train_loss_depth/total_iters)
         # record the last batch
         # train_log.scalar_summary('avg_loss', total_train_loss / len(loaders[0]), epoch)
 
@@ -260,7 +272,7 @@ def main():
             'best': best_loss,
             'state_dict': model.state_dict(),
             'optimize':optimizer.state_dict(),
-        },  os.path.abspath(args.savemodel) + '/' + saveName +'/model_{}.tar'.format(epoch))
+        },  os.path.abspath(args.resultspth) + '/' + saveName +'/model_{}.tar'.format(epoch))
 
         # save top 5 ckpts only
         # list_ckpt = glob(os.path.join( os.path.abspath(args.savemodel) + '/' + saveName, 'model_*'))
@@ -269,28 +281,33 @@ def main():
         #     os.remove(list_ckpt[0])
 
         # Vaild
-        # if epoch % 10 == 0:
-        #     total_val_loss = 0
+        if epoch % 10 == 0:
+            total_val_loss = 0
 
-        #     for batch_idx, sample_batch in enumerate(loaders[1]):
-        #         img_stack=sample_batch['input'].float()
-        #         gt_disp=sample_batch['output'][:,-1,:,:]
-        #         gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
-        #         foc_dist=sample_batch['fdist'].float()
-        #         with torch.no_grad():
-        #             start_time = time.time()
-        #             val_loss, viz = valid(img_stack, gt_disp, foc_dist)
+            for batch_idx, sample_batch in enumerate(loaders[1]):
+                img_stack=sample_batch['input'].float()
+                gt_disp=sample_batch['output'][:,-1,:,:]
+                gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
+                foc_dist=sample_batch['fdist'].float()
+                blur=sample_batch['blur'].float()
 
-        #         if batch_idx %10 == 0:
-        #             torch.cuda.synchronize()
-        #             print('[val] epoch %d : %d/%d val_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[1]), val_loss, time.time() - start_time))
-        #         total_val_loss += val_loss
+                with torch.no_grad():
+                    start_time = time.time()
+                    val_loss, viz = valid(img_stack, gt_disp, foc_dist)
+
+                # if batch_idx %10 == 0:
+                #     torch.cuda.synchronize()
+                #     print('[val] epoch %d : %d/%d val_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[1]), val_loss, time.time() - start_time))
+                #     logging.info('[val] val_loss=%2.5f', val_loss)
+                total_val_loss += val_loss
 
 
-        #     avg_val_loss = total_val_loss / len(loaders[1])
-        #     err_thres = 0.05 # for validation purpose
-        #     write_log(viz, img_stack[:, 0], img_stack[:, -1], gt_disp, val_log, epoch, thres=err_thres)
-        #     val_log.scalar_summary('avg_loss', avg_val_loss, epoch)
+            avg_val_loss = total_val_loss / len(loaders[1])
+            err_thres = 0.05 # for validation purpose
+            # write_log(viz, img_stack[:, 0], img_stack[:, -1], gt_disp, val_log, epoch, thres=err_thres)
+            # val_log.scalar_summary('avg_loss', avg_val_loss, epoch)
+            print('[val] avg val loss %2.5f'%(avg_val_loss))
+            logging.info('[val] avg val_loss=%2.5f', avg_val_loss)
 
         #     # save best
         #     if avg_val_loss < best_loss:

@@ -112,7 +112,12 @@ class LinBlur1(nn.Module):
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
         # pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
-        return cost3
+        fd=focal_dist[:,:-1]
+        fd=torch.unsqueeze(fd,dim=2).unsqueeze(dim=3)
+        fd=torch.repeat_interleave(fd,repeats=cost3.shape[-2],dim=2).repeat_interleave(repeats=cost3.shape[-1],dim=3)
+        blur=cost3[:,:-1,:,:]
+        s2_pred=self.distreg(fd,blur)
+        return cost3,s2_pred
 
         # different output based on level
         # stacked = [pred3]
