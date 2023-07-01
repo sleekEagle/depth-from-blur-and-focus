@@ -40,6 +40,7 @@ parser.add_argument('--lr', type=float, default=0.0001,  help='learning rate')
 parser.add_argument('--epochs', type=int, default=700, help='number of epochs to train')
 parser.add_argument('--batchsize', type=int, default=12, help='samples per batch')
 parser.add_argument('--model', default='LinBlur1', help='save path')
+parser.add_argument('--bweight', type=float, default=1.0,  help='learning rate')
 
 
 # ====== log path ==========
@@ -179,7 +180,7 @@ def train(img_stack,gt_disp,blur,foc_dist):
     blurloss = F.smooth_l1_loss(cost3[blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none').mean()
     dmask=torch.squeeze(mask,dim=1)
     depthloss = F.smooth_l1_loss(s2_pred[dmask] * beta_scale, gt_disp[:,0,:,:][dmask]* beta_scale, reduction='none').mean()
-    loss=blurloss
+    loss=args.bweight*blurloss+depthloss
     torch.autograd.set_detect_anomaly(True) 
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
