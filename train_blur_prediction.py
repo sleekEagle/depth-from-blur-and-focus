@@ -61,7 +61,7 @@ logpath=join(args.resultspth,dt_string)
 logging.basicConfig(filename=logpath, format='%(levelname)s:%(asctime)s:%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p',
                     filemode='w',encoding='utf-8', level=logging.INFO)
 logging.info('Starting training')
-
+ 
 logging.info(args)
 
 
@@ -194,27 +194,25 @@ def train(img_stack,gt_disp,blur,foc_dist):
     return blurlossvalue,linlossvalue,depthlossvalue
 
 
-def valid(img_stack,gt_disp, foc_dist):
+def valid(img_stack,gt_disp,blur,foc_dist):
     model.eval()
     img_stack = Variable(torch.FloatTensor(img_stack))
     gt_disp = Variable(torch.FloatTensor(gt_disp))
-    img_stack, gt_disp, foc_dist = img_stack.cuda() , gt_disp.cuda(), foc_dist.cuda()
+    img_stack, gt_disp,foc_dist,blur = img_stack.cuda(),gt_disp.cuda(),foc_dist.cuda(),blur.cuda()
     gt_disp=torch.squeeze(gt_disp)
     #---------
     mask = gt_disp > 0
     mask.detach_()
+    blur_mask=torch.repeat_interleave(torch.unsqueeze(mask,dim=1),repeats=img_stack.shape[1],dim=1)
     #----
     with torch.no_grad():
         cost3,pred_disp= model(img_stack, foc_dist)
         if args.model == 'LinDFF' or args.model == 'LinDFF1':
             pred_disp=torch.unsqueeze(pred_disp,dim=1)
-        loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
+        depth_loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
+        blur_loss = (F.mse_loss(cost3[blur_mask] , blur[blur_mask] , reduction='mean')) # use MSE loss for val
 
-    vis = {}
-    vis['mask'] = mask.type(torch.float).detach().cpu()
-    vis["pred"] = pred_disp.detach().cpu()
-
-    return loss, vis
+    return depth_loss,blur_loss
 
 
 
@@ -254,20 +252,12 @@ def main():
             start_time = time.time()
             blurlossvalue,linlossvalue,depthlossvalue = train(img_stack, gt_disp, blur,foc_dist)
 
-            # if total_iters %10 == 0:
-            #     torch.cuda.synchronize()
-            #     print('epoch %d:  %d/ %d train_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[0]), loss, time.time() - start_time))
-            #     train_log.scalar_summary('loss_batch',loss, total_iters)
-
             total_train_loss_blur += blurlossvalue
             total_train_loss_lin += linlossvalue
             total_train_loss_depth+=depthlossvalue
             total_iters += 1
-        print('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' %(total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters))
-        # logging.info('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' , total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters)
-        logging.info('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f', total_train_loss_blur/total_iters, total_train_loss_lin/total_iters, total_train_loss_depth/total_iters)
-        # record the last batch
-        # train_log.scalar_summary('avg_loss', total_train_loss / len(loaders[0]), epoch)
+        print('[train] blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' %(total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters))
+        logging.info('[train] blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' , total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters)
 
         # save model
         torch.save({
@@ -278,15 +268,9 @@ def main():
             'optimize':optimizer.state_dict(),
         },  os.path.abspath(args.resultspth)+'/model_{}.tar'.format(epoch))
 
-        # save top 5 ckpts only
-        # list_ckpt = glob(os.path.join( os.path.abspath(args.savemodel) + '/' + saveName, 'model_*'))
-        # list_ckpt.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
-        # if len(list_ckpt) > 5:
-        #     os.remove(list_ckpt[0])
-
         # Vaild
         if epoch % 10 == 0:
-            total_val_loss = 0
+            total_val_depth_loss,total_val_blur_loss = 0,0
 
             for batch_idx, sample_batch in enumerate(loaders[1]):
                 img_stack=sample_batch['input'].float()
@@ -297,21 +281,23 @@ def main():
 
                 with torch.no_grad():
                     start_time = time.time()
-                    val_loss, viz = valid(img_stack, gt_disp, foc_dist)
+                    val_depth_loss,val_blur_loss = valid(img_stack, gt_disp,blur,foc_dist)
 
                 # if batch_idx %10 == 0:
                 #     torch.cuda.synchronize()
                 #     print('[val] epoch %d : %d/%d val_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[1]), val_loss, time.time() - start_time))
                 #     logging.info('[val] val_loss=%2.5f', val_loss)
-                total_val_loss += val_loss
+                total_val_depth_loss += val_depth_loss
+                total_val_blur_loss += val_blur_loss
 
 
-            avg_val_loss = total_val_loss / len(loaders[1])
+            avg_val_depth_loss = total_val_depth_loss / len(loaders[1])
+            avg_val_blur_loss = total_val_blur_loss / len(loaders[1])
             err_thres = 0.05 # for validation purpose
             # write_log(viz, img_stack[:, 0], img_stack[:, -1], gt_disp, val_log, epoch, thres=err_thres)
             # val_log.scalar_summary('avg_loss', avg_val_loss, epoch)
-            print('[val] avg val loss %2.5f'%(avg_val_loss))
-            logging.info('[val] avg val_loss=%2.5f', avg_val_loss)
+            print('[val] avg val depth loss %2.5f average val blur loss %2.5f' %(avg_val_depth_loss,avg_val_blur_loss))
+            logging.info('[val] avg val depth loss=%2.5f average val blur loss %2.5f', avg_val_depth_loss,avg_val_blur_loss)
 
         #     # save best
         #     if avg_val_loss < best_loss:
