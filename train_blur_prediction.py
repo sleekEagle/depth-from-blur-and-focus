@@ -58,7 +58,11 @@ if not os.path.exists(args.resultspth):
 now = datetime.now()
 dt_string = now.strftime("%d-%m-%Y_%H_%M_%S")+'.log'
 logpath=join(args.resultspth,dt_string)
+logging.basicConfig(filename=logpath, format='%(levelname)s:%(asctime)s:%(message)s', datefmt='%m/%d/%Y %I:%M:%S %p',
+                    filemode='w',encoding='utf-8', level=logging.INFO)
+logging.info('Starting training')
 
+logging.info(args)
 
 
 # ============ init ===============
@@ -261,11 +265,9 @@ def main():
             total_iters += 1
         print('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' %(total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters))
         # logging.info('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' , total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters)
-        # logging.info('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f', total_train_loss_blur/total_iters, total_train_loss_lin/total_iters, total_train_loss_depth/total_iters)
+        logging.info('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f', total_train_loss_blur/total_iters, total_train_loss_lin/total_iters, total_train_loss_depth/total_iters)
         # record the last batch
         # train_log.scalar_summary('avg_loss', total_train_loss / len(loaders[0]), epoch)
-        with open(logpath, "a") as file:
-            file.write('blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f\n' %(total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters))
 
         # save model
         torch.save({
@@ -310,9 +312,6 @@ def main():
             # val_log.scalar_summary('avg_loss', avg_val_loss, epoch)
             print('[val] avg val loss %2.5f'%(avg_val_loss))
             logging.info('[val] avg val_loss=%2.5f', avg_val_loss)
-            with open(logpath, "a") as file:
-                file.write('[val] avg val loss %2.5f\n'%(avg_val_loss))
-
 
         #     # save best
         #     if avg_val_loss < best_loss:
