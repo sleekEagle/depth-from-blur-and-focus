@@ -216,7 +216,7 @@ def valid(img_stack,gt_disp,blur,foc_dist):
         # depth_loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
         blur_loss = (F.mse_loss(cost3[blur_mask] , blur[:,:-1,:,:][blur_mask] , reduction='mean')) # use MSE loss for val
 
-    return blur_loss
+    return blur_loss.item()
 
 
 
@@ -239,7 +239,7 @@ def main():
         saveName = saveName + '_diffFeat{}'.format(args.use_diff)
 
     total_iters = total_iter
-
+    best_blur_loss=0
     for epoch in range(start_epoch, args.epochs+1):
         total_train_loss_blur,total_train_loss_lin,total_train_loss_depth = 0,0,0
         lr_ = adjust_learning_rate(optimizer,epoch)
@@ -264,9 +264,8 @@ def main():
         logging.info('[train] blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' , total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters)
 
         # Vaild
-        if epoch % 2 == 0:
+        if epoch % 1 == 0:
             total_val_depth_loss,total_val_blur_loss = 0,0
-            best_blur_loss=0
             for batch_idx, sample_batch in enumerate(loaders[1]):
                 img_stack=sample_batch['input'].float()
                 gt_disp=sample_batch['output'][:,-1,:,:]
@@ -293,7 +292,10 @@ def main():
             # val_log.scalar_summary('avg_loss', avg_val_loss, epoch)
             print('[val] avg val depth loss %2.5f average val blur loss %2.5f' %(avg_val_depth_loss,avg_val_blur_loss))
             logging.info('[val] avg val depth loss=%2.5f average val blur loss %2.5f', avg_val_depth_loss,avg_val_blur_loss)
-            if epoch==0:
+            print('epoch:'+str(epoch))
+            print('avg_val_blur_loss:'+str(avg_val_blur_loss))
+            print('best_blur_loss:'+str(best_blur_loss))
+            if epoch==1:
                 best_blur_loss=avg_val_blur_loss
                 print('jhere epoch=0')
                 print(best_blur_loss)
