@@ -170,27 +170,31 @@ def train(img_stack,gt_disp,blur,foc_dist):
 
     mask = gt_disp > 0
     mask.detach_()
-    blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1],dim=1)
+    blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1]-1,dim=1)
     #----
     optimizer.zero_grad()
     beta_scale = 1 # smooth l1 do not have beta in 1.6, so we increase the input to and then scale back -- no significant improve according to our trials
-    cost3,s2_pred= model(img_stack, foc_dist)
+    cost3= model(img_stack, foc_dist)
     #cost3 shape: torch.Size([12, 6, 256, 256])
     #gt_disp shape : torch.Size([12, 1, 256, 256])
     #foc_dist shape : torch.Size([12, 6])
     s1=foc_dist[:,:-1]
-    linloss=lin_blur_loss(s1,gt_disp,gt_disp,cost3[:,:-1,:,:])
-    blurloss = F.smooth_l1_loss(cost3[blur_mask] * beta_scale, blur[blur_mask]* beta_scale, reduction='none').mean()
+    # linloss=lin_blur_loss(s1,gt_disp,gt_disp,cost3[:,:-1,:,:])
+    # print('blur:'+str(blur.shape))
+    # print('cost3:'+str(cost3.shape))
+    # print('blur_mask:'+str(blur_mask.shape))
+    blurloss = F.smooth_l1_loss(cost3[blur_mask] * beta_scale, blur[:,:-1,:,:][blur_mask]* beta_scale, reduction='none').mean()
     dmask=torch.squeeze(mask,dim=1)
-    depthloss = F.smooth_l1_loss(s2_pred[dmask] * beta_scale, gt_disp[:,0,:,:][dmask]* beta_scale, reduction='none').mean()
-    loss=args.bweight*blurloss+depthloss
+    # depthloss = F.smooth_l1_loss(s2_pred[dmask] * beta_scale, gt_disp[:,0,:,:][dmask]* beta_scale, reduction='none').mean()
+    # loss=args.bweight*blurloss+depthloss
+    loss=blurloss
     torch.autograd.set_detect_anomaly(True) 
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
     optimizer.step()
     blurlossvalue = blurloss.data
-    linlossvalue = linloss.data
-    depthlossvalue=depthloss.data
+    linlossvalue = 0
+    depthlossvalue=0
     return blurlossvalue,linlossvalue,depthlossvalue
 
 
@@ -203,16 +207,16 @@ def valid(img_stack,gt_disp,blur,foc_dist):
     #---------
     mask = gt_disp > 0
     mask.detach_()
-    blur_mask=torch.repeat_interleave(torch.unsqueeze(mask,dim=1),repeats=img_stack.shape[1],dim=1)
+    blur_mask=torch.repeat_interleave(torch.unsqueeze(mask,dim=1),repeats=img_stack.shape[1]-1,dim=1)
     #----
     with torch.no_grad():
-        cost3,pred_disp= model(img_stack, foc_dist)
-        if args.model == 'LinDFF' or args.model == 'LinDFF1':
-            pred_disp=torch.unsqueeze(pred_disp,dim=1)
-        depth_loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
-        blur_loss = (F.mse_loss(cost3[blur_mask] , blur[blur_mask] , reduction='mean')) # use MSE loss for val
+        cost3= model(img_stack, foc_dist)
+        # if args.model == 'LinDFF' or args.model == 'LinDFF1':
+        #     pred_disp=torch.unsqueeze(pred_disp,dim=1)
+        # depth_loss = (F.mse_loss(pred_disp[mask] , gt_disp[mask] , reduction='mean')) # use MSE loss for val
+        blur_loss = (F.mse_loss(cost3[blur_mask] , blur[:,:-1,:,:][blur_mask] , reduction='mean')) # use MSE loss for val
 
-    return depth_loss,blur_loss
+    return blur_loss
 
 
 
@@ -259,19 +263,10 @@ def main():
         print('[train] blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' %(total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters))
         logging.info('[train] blur loss=%2.5f linear loss=%2.5f depth loss=%2.5f' , total_train_loss_blur/total_iters,total_train_loss_lin/total_iters,total_train_loss_depth/total_iters)
 
-        # save model
-        torch.save({
-            'epoch': epoch + 1,
-            'iters': total_iters + 1,
-            'best': best_loss,
-            'state_dict': model.state_dict(),
-            'optimize':optimizer.state_dict(),
-        },  os.path.abspath(args.resultspth)+'/model_{}.tar'.format(epoch))
-
         # Vaild
-        if epoch % 10 == 0:
+        if epoch % 2 == 0:
             total_val_depth_loss,total_val_blur_loss = 0,0
-
+            best_blur_loss=0
             for batch_idx, sample_batch in enumerate(loaders[1]):
                 img_stack=sample_batch['input'].float()
                 gt_disp=sample_batch['output'][:,-1,:,:]
@@ -281,13 +276,13 @@ def main():
 
                 with torch.no_grad():
                     start_time = time.time()
-                    val_depth_loss,val_blur_loss = valid(img_stack, gt_disp,blur,foc_dist)
+                    val_blur_loss = valid(img_stack, gt_disp,blur,foc_dist)
 
                 # if batch_idx %10 == 0:
                 #     torch.cuda.synchronize()
                 #     print('[val] epoch %d : %d/%d val_loss = %.6f , time = %.2f' % (epoch, batch_idx, len(loaders[1]), val_loss, time.time() - start_time))
                 #     logging.info('[val] val_loss=%2.5f', val_loss)
-                total_val_depth_loss += val_depth_loss
+                total_val_depth_loss += 0
                 total_val_blur_loss += val_blur_loss
 
 
@@ -298,6 +293,22 @@ def main():
             # val_log.scalar_summary('avg_loss', avg_val_loss, epoch)
             print('[val] avg val depth loss %2.5f average val blur loss %2.5f' %(avg_val_depth_loss,avg_val_blur_loss))
             logging.info('[val] avg val depth loss=%2.5f average val blur loss %2.5f', avg_val_depth_loss,avg_val_blur_loss)
+            if epoch==0:
+                best_blur_loss=avg_val_blur_loss
+                print('jhere epoch=0')
+                print(best_blur_loss)
+            elif avg_val_blur_loss<best_blur_loss:
+                print('saving model')
+                # save model
+                torch.save({
+                    'epoch': epoch + 1,
+                    'iters': total_iters + 1,
+                    'best': best_loss,
+                    'state_dict': model.state_dict(),
+                    'optimize':optimizer.state_dict(),
+                },  os.path.abspath(args.resultspth)+'/best_model.tar'.format(epoch))
+
+
 
         #     # save best
         #     if avg_val_loss < best_loss:

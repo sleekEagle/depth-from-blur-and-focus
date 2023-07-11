@@ -15,18 +15,20 @@ class sepConv3dBlock(nn.Module):
     Separable 3d convolution block as 2 separable convolutions and a projection
     layer
     '''
-    def __init__(self, in_planes, out_planes, stride=(1,1,1)):
+    def __init__(self, in_planes, out_planes, stride=(1,1,1),pad=(0,1,1)):
         super(sepConv3dBlock, self).__init__()
         if in_planes == out_planes and stride==(1,1,1):
             self.downsample = None
         else:
             self.downsample = projfeat3d(in_planes, out_planes,stride)
-        self.conv1 = sepConv3d(in_planes, out_planes, 3, stride, 1)
-        self.conv2 = sepConv3d(out_planes, out_planes, 3, (1,1,1), 1)
+        self.conv1 = sepConv3d(in_planes, out_planes, (3,3,3), stride, pad)
+        self.conv2 = sepConv3d(out_planes, out_planes, (3,3,3), (1,1,1), pad)
 
 
     def forward(self,x):
+        #x:torch.Size([60, 16, 2, 64, 64])
         out = F.relu(self.conv1(x),inplace=True)
+        #out:torch.Size([60, 16, 3, 64, 64])
         if self.downsample:
             x = self.downsample(x)
         out = F.relu(x + self.conv2(out),inplace=True)
@@ -148,19 +150,99 @@ class distregression(nn.Module):
         s2_pred=torch.mean(sel,dim=2)[:,0,:,:]
         return s2_pred
 
+# class decoderBlock(nn.Module):
+#     def __init__(self, nconvs, inchannelF,channelF,stride=(1,1,1),up=False, nstride=1,pool=False):
+#         super(decoderBlock, self).__init__()
+#         self.pool=pool
+#         stride = [stride]*nstride + [(1,1,1)] * (nconvs-nstride)
+#         self.convs = [sepConv3dBlock(inchannelF,channelF,stride=stride[0])]
+#         for i in range(1,nconvs):
+#             self.convs.append(sepConv3dBlock(channelF,channelF, stride=stride[i]))
+#         self.convs = nn.Sequential(*self.convs)
+
+#         self.classify = nn.Sequential(sepConv3d(channelF, channelF, 3, (1,1,1), 1),
+#                                        nn.ReLU(inplace=True),
+#                                        sepConv3d(channelF, 1, 3, (1,1,1),1,bias=True),
+#                                        nn.ReLU(inplace=True))
+
+#         self.up = False
+#         if up:
+#             self.up = True
+#             self.up = nn.Sequential(nn.Upsample(scale_factor=(1,2,2),mode='trilinear'),
+#                                  sepConv3d(channelF, channelF//2, 3, (1,1,1),1,bias=False),
+#                                  nn.ReLU(inplace=True))
+
+#         if pool:
+#             self.pool_convs = torch.nn.ModuleList([sepConv3d(channelF, channelF, 1, (1,1,1), 0),
+#                                sepConv3d(channelF, channelF, 1, (1,1,1), 0),
+#                                sepConv3d(channelF, channelF, 1, (1,1,1), 0),
+#                                sepConv3d(channelF, channelF, 1, (1,1,1), 0)])
+            
+ 
+
+#         for m in self.modules():
+#             if isinstance(m, nn.Conv3d):
+#                 n = m.kernel_size[0] * m.kernel_size[1]*m.kernel_size[2] * m.out_channels
+#                 m.weight.data.normal_(0, math.sqrt(2. / n))
+#                 if hasattr(m.bias,'data'):
+#                     m.bias.data.zero_()
+
+
+#     def forward(self,fvl):
+#         # left
+#         #beforre fvl:torch.Size([1, 16, 6, 64, 64])
+#         fvl = self.convs(fvl)
+#         #fvl:torch.Size([1, 16, 6, 64, 64])
+#         # pooling
+#         if self.pool:
+#             fvl_out = fvl
+#             _,_,d,h,w=fvl.shape
+#             for i,pool_size in enumerate(np.linspace(1,min(d,h,w)//2,4,dtype=int)):
+#                 kernel_size = (int(d/pool_size), int(h/pool_size), int(w/pool_size))
+#                 out = F.avg_pool3d(fvl, kernel_size, stride=kernel_size)       
+#                 out = self.pool_convs[i](out)
+#                 out = F.upsample(out, size=(d,h,w), mode='trilinear')
+#                 fvl_out = fvl_out + 0.25*out
+#             fvl = F.relu(fvl_out/2.,inplace=True)
+
+
+#         if self.training:
+#             # classification
+#             costl = self.classify(fvl)
+#             if self.up:
+#                 fvl = self.up(fvl)
+#         else:
+#             # classification
+#             if self.up:
+#                 fvl = self.up(fvl)
+#                 costl=fvl
+#             else:
+#                 costl = self.classify(fvl)
+#                 #after clssify:torch.Size([1, 1, 6, 64, 64])
+
+#         return fvl,costl.squeeze(1)
+    
+
 class decoderBlock(nn.Module):
     def __init__(self, nconvs, inchannelF,channelF,stride=(1,1,1),up=False, nstride=1,pool=False):
         super(decoderBlock, self).__init__()
         self.pool=pool
         stride = [stride]*nstride + [(1,1,1)] * (nconvs-nstride)
-        self.convs = [sepConv3dBlock(inchannelF,channelF,stride=stride[0])]
-        for i in range(1,nconvs):
-            self.convs.append(sepConv3dBlock(channelF,channelF, stride=stride[i]))
+        self.convs = [sepConv3dBlock(inchannelF,channelF,stride=stride[0],pad=(1,1,1))]
+        # for i in range(1,nconvs):
+        #     self.convs.append(sepConv3dBlock(channelF,channelF, stride=stride[i]))
         self.convs = nn.Sequential(*self.convs)
 
         self.classify = nn.Sequential(sepConv3d(channelF, channelF, 3, (1,1,1), 1),
+                                    nn.ReLU(inplace=True),
+                                    sepConv3d(channelF, channelF, 3, (1,1,1), 1),
+                                    nn.ReLU(inplace=True),
+                                    sepConv3d(channelF, 1, (2,3,3), (1,1,1), (0,1,1)),
+                                    nn.ReLU(inplace=True))
+
+        self.aggregate = nn.Sequential(nn.Conv2d(2, 16, 3, (1,1), 1),
                                        nn.ReLU(inplace=True),
-                                       sepConv3d(channelF, 1, 3, (1,1,1),1,bias=True),
+                                       nn.Conv2d(16, 1, 3, (1,1),1,bias=True),
                                        nn.ReLU(inplace=True))
 
         self.up = False
@@ -188,7 +270,9 @@ class decoderBlock(nn.Module):
 
     def forward(self,fvl):
         # left
+        #fvl:torch.Size([60, 1, 32, 64, 64])
         fvl = self.convs(fvl)
+        #fvl after:torch.Size([5*bs, 16, 2, 64, 64])
         # pooling
         if self.pool:
             fvl_out = fvl
@@ -201,10 +285,12 @@ class decoderBlock(nn.Module):
                 fvl_out = fvl_out + 0.25*out
             fvl = F.relu(fvl_out/2.,inplace=True)
 
-
         if self.training:
             # classification
             costl = self.classify(fvl)
+            #costl:torch.Size([60, 1, 1, 64, 64])
+            costl=torch.squeeze(costl,dim=1)
+            #costtl:torch.Size([60, 1, 64, 64])
             if self.up:
                 fvl = self.up(fvl)
         else:
@@ -214,8 +300,10 @@ class decoderBlock(nn.Module):
                 costl=fvl
             else:
                 costl = self.classify(fvl)
-
-        return fvl,costl.squeeze(1)
+                costl=torch.squeeze(costl,dim=1)
+                #after classify:torch.Size([5, 2, 64, 64])
+                #after ag:torch.Size([5, 1, 64, 64])
+        return fvl,costl
     
 
 class decoderBlock2D(nn.Module):

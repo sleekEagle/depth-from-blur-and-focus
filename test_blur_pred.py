@@ -32,8 +32,8 @@ parser.add_argument('--model', default='LinBlur1', help='save path')
 
 
 # ====== log path ==========
-parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\Documents\\model_700.tar',   help='path to pre-trained checkpoint if any')
-parser.add_argument('--figpath', default='C:\\Users\\lahir\\data\\lindefblur\\pred_blur_lindiff1_nondiv_700epochs_pred_infalso\\', help='save path')
+parser.add_argument('--loadmodel', default='C:\\Users\\lahir\\Downloads\\commit_2236bf0.tar',   help='path to pre-trained checkpoint if any')
+parser.add_argument('--figpath', default='C:\\Users\\lahir\\data\\lindefblur\\test\\', help='save path')
 parser.add_argument('--isVali', type=int, default=0, help='Save images for the valudation dataset ?. If 0 used train dataset')
 parser.add_argument('--seed', type=int, default=2021, metavar='S',  help='random seed (default: 2021)')
 
@@ -69,6 +69,7 @@ elif args.model == 'LinBlur1':
     model = LinBlur1(clean=False,level=1,use_div=0)
     model = nn.DataParallel(model)
     model.cuda()
+model.eval()
 
 # ========= load model if any ================
 if args.loadmodel is not None:
@@ -131,6 +132,7 @@ def save_blurpred(img,blur,depth,s1,n,savepath):
     import numpy as np
     fdist=s1.numpy()[0,:]
     cost3=model(img,s1)
+    return -1
     for idx in range(n):
         i,j=(np.random.random(size=2)*depth.shape[-1]).tolist()
         i,j=int(i),int(j)
@@ -140,6 +142,8 @@ def save_blurpred(img,blur,depth,s1,n,savepath):
         #get GT blur
         b=blur[0,:-1,i,j].numpy()*(fdist[:-1]-2.9e-3)
         d=depth[0,0,i,j].numpy().item()
+        if d>fdist[0]:
+            continue
 
         fig = plt.figure()
         ax = plt.subplot(111)
@@ -165,15 +169,15 @@ if not os.path.exists(train_path):
 if not os.path.exists(test_path):
     os.makedirs(test_path)
 
-#save train images
-for st_iter, sample_batch in enumerate(loaders[0]):
-    # Setting up input and output data
-    img = sample_batch['input'].float()
-    blur = sample_batch['blur'].float()
-    depth = sample_batch['output'].float()
-    s1=sample_batch['fdist']
-    break   
-save_blurpred(img,blur,depth,s1,100,train_path)
+# #save train images
+# for st_iter, sample_batch in enumerate(loaders[0]):
+#     # Setting up input and output data
+#     img = sample_batch['input'].float()
+#     blur = sample_batch['blur'].float()
+#     depth = sample_batch['output'].float()
+#     s1=sample_batch['fdist']
+#     break   
+# save_blurpred(img,blur,depth,s1,100,train_path)
 
 #save test images
 for st_iter, sample_batch in enumerate(loaders[1]):
@@ -183,37 +187,39 @@ for st_iter, sample_batch in enumerate(loaders[1]):
     depth = sample_batch['output'].float()
     s1=sample_batch['fdist']
     break   
-save_blurpred(img,blur,depth,s1,100,test_path)
+save_blurpred(img,blur,depth,s1,1000,test_path)
 
 
 
-#get the blur loss 
-total_blur_loss,total_depth_loss=0,0
-for st_iter, sample_batch in enumerate(loaders[1]):
-    # Setting up input and output data
-    img_stack = sample_batch['input'].float()
-    blur = sample_batch['blur'].float()
-    gt_disp = sample_batch['output'].float()
-    gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
-    foc_dist=sample_batch['fdist'].float()
+# #get the blur loss 
+# total_blur_loss,total_depth_loss,total_depth_inf_loss=0,0,0
+# for st_iter, sample_batch in enumerate(loaders[1]):
+#     # Setting up input and output data
+#     img_stack = sample_batch['input'].float()
+#     blur = sample_batch['blur'].float()
+#     gt_disp = sample_batch['output'].float()
+#     gt_disp=torch.unsqueeze(gt_disp,dim=1).float()
+#     foc_dist=sample_batch['fdist'].float()
 
-    img_stack   = Variable(torch.FloatTensor(img_stack))
-    gt_disp    = Variable(torch.FloatTensor(gt_disp))
-    img_stack, gt_disp, blur,foc_dist = img_stack.cuda(),  gt_disp.cuda(), blur.cuda(),foc_dist.cuda()
+#     img_stack   = Variable(torch.FloatTensor(img_stack))
+#     gt_disp    = Variable(torch.FloatTensor(gt_disp))
+#     img_stack, gt_disp, blur,foc_dist = img_stack.cuda(),  gt_disp.cuda(), blur.cuda(),foc_dist.cuda()
 
-    mask = gt_disp > 0
-    mask=mask.detach_()
-    blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1],dim=1)
-    blur_mask=torch.squeeze(blur_mask,dim=2)
+#     mask = gt_disp > 0
+#     mask=mask.detach_()
+#     blur_mask=torch.repeat_interleave(mask,repeats=img_stack.shape[1],dim=1)
+#     blur_mask=torch.squeeze(blur_mask,dim=2)
 
-    cost3 = model(img_stack, foc_dist)
+#     cost3,s2_pred= model(img_stack, foc_dist)
 
-    blurloss=F.mse_loss(cost3[blur_mask],blur[blur_mask])
-    gt_disp=torch.squeeze(gt_disp,dim=0).squeeze(dim=0)
-    mask=torch.squeeze(mask,dim=0).squeeze(dim=0)
-    infmask=cost3[:,-1,:,:]>0.001
-    depthloss=F.mse_loss((1/cost3[:,-1,:,:])[infmask*mask],gt_disp[infmask*mask])
+#     blurloss=F.mse_loss(cost3[blur_mask],blur[blur_mask])
+#     gt_disp=torch.squeeze(gt_disp,dim=0).squeeze(dim=0)
+#     mask=torch.squeeze(mask,dim=0).squeeze(dim=0)
+#     infmask=cost3[:,-1,:,:]>0.001
+#     depthloss_inf=F.mse_loss((1/cost3[:,-1,:,:])[infmask*mask],gt_disp[infmask*mask])
+#     depthloss=F.mse_loss((s2_pred)[mask],gt_disp[mask])
 
-    total_blur_loss+=blurloss.item()
-    total_depth_loss+=depthloss.item()
-print("blur loss= %2.5f  depth (from inf image) loss= %2.5f"%(total_blur_loss/(st_iter+1) , total_depth_loss/(st_iter+1)))
+#     total_blur_loss+=blurloss.item()
+#     total_depth_inf_loss+=depthloss_inf.item()
+#     total_depth_loss+=depthloss.item()
+# print("blur loss= %2.5f  depth (from inf image) loss= %2.5f depth loss= %2.5f"%(total_blur_loss/(st_iter+1) , total_depth_inf_loss/(st_iter+1) , total_depth_loss/(st_iter+1)))

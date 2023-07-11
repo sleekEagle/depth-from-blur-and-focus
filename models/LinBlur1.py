@@ -83,9 +83,32 @@ class LinBlur1(nn.Module):
                                      self.div_feat_volume(_vol2), self.div_feat_volume(_vol1)
         else:
             vol4, vol3, vol2, vol1 =  _vol4, _vol3, _vol2, _vol1
-        
+
+        '''
+        vol1:torch.Size([1, 16, 6, 64, 64])
+        vol2:torch.Size([1, 32, 6, 32, 32])
+        vol3:torch.Size([1, 64, 6, 16, 16])
+        vol4:torch.Size([1, 128, 6, 8, 8])
+        '''
         if self.level == 1:
-            _, cost3 = self.decoder3(vol1)
+            #vol1 torch.Size([bs, 16, 6, 64, 64])
+            inf_=vol1[:,:,-1,:,:]
+            inf_=torch.unsqueeze(inf_,dim=2)
+            tenlist=[]
+            for i in range(vol1.shape[2]-1):
+                tmp1_=vol1[:,:,i:i+1,:,:]
+                ten=torch.concat((tmp1_,inf_),dim=2)
+                #ten:torch.Size([bs, 16, 2, 64, 64])
+                tenlist.append(ten)
+            #stack the tensors in the bs dimention
+            i_inf_blurs=torch.stack(tenlist,dim=0)
+            #i_inf_blurs:torch.Size([5, bs, 16, 2, 64, 64])
+            i_inf_blurs=i_inf_blurs.view(-1,i_inf_blurs.shape[2],i_inf_blurs.shape[3],i_inf_blurs.shape[4],i_inf_blurs.shape[5])
+            #i_inf_blurs:torch.Size([60, 16, 2, 64, 64])
+            _, cost3 = self.decoder3(i_inf_blurs)
+            #cost3:torch.Size([bs*5, 1, 64, 64])
+            cost3=cost3.view(-1,n-1,cost3.shape[-2],cost3.shape[-1])
+            #cost3:torch.Size([bs, 5, 64, 64])         
 
         elif self.level == 2:
             feat4_2x, cost4 = self.decoder4(vol2)
@@ -111,13 +134,14 @@ class LinBlur1(nn.Module):
             _, cost3 = self.decoder3(feat3)
 
         cost3 = F.interpolate(cost3, [h, w], mode='bilinear')
+        #cost3:torch.Size([bs, 5, 256, 256])
         # pred3, std3 = self.disp_reg(F.softmax(cost3,1),focal_dist, uncertainty=True)
-        fd=focal_dist[:,:-1]
-        fd=torch.unsqueeze(fd,dim=2).unsqueeze(dim=3)
-        fd=torch.repeat_interleave(fd,repeats=cost3.shape[-2],dim=2).repeat_interleave(repeats=cost3.shape[-1],dim=3)
-        blur=cost3[:,:-1,:,:]
-        s2_pred=self.distreg(fd,blur)
-        return cost3,s2_pred
+        # fd=focal_dist[:,:-1]
+        # fd=torch.unsqueeze(fd,dim=2).unsqueeze(dim=3)
+        # fd=torch.repeat_interleave(fd,repeats=cost3.shape[-2],dim=2).repeat_interleave(repeats=cost3.shape[-1],dim=3)
+        # blur=cost3[:,:-1,:,:]
+        # s2_pred=self.distreg(fd,blur)
+        return cost3
 
         # different output based on level
         # stacked = [pred3]
